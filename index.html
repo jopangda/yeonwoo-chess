@@ -80,6 +80,8 @@ button{cursor:pointer;touch-action:manipulation}
 .dots i.now{border-color:var(--fg);box-shadow:0 0 0 2px var(--sel)}
 .lnav{grid-area:white;display:flex;gap:8px;justify-content:center}
 .lnav .btn{flex:1 1 0;max-width:220px}
+.wait .board{opacity:.5;transition:opacity .2s}
+.wait .sq{cursor:default}
 .learn .tip{color:var(--fg);font-size:1.08rem}
 .sq.star::before{content:"";position:absolute;inset:14%;pointer-events:none;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6l13 28 31 4-23 21 6 31-27-15-27 15 6-31L6 38l31-4z' fill='%23FFC93C' stroke='%23243241' stroke-width='5' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat}
 .sq.star.hint::after{display:none}
@@ -543,8 +545,13 @@ function perft(s, d) {
     L = { i, d, stars: new Set((d.stars || []).map(sqIdx)), done: false, locked: false, last: null, msg: '' };
     cur = parseFEN(d.fen);
     sel = -1; moves = []; over = null; justMoved = false;
-    closeSheet(); save(); render();
-    if (!quiet) say(d.title + '. ' + d.text);
+    closeSheet(); save();
+    if (!quiet) {
+      const me = L;
+      L.wait = true;   // the board stays locked until the explanation has been heard
+      say(d.title + '. ' + d.text, () => { if (L === me && me.wait) { me.wait = false; render(); } });
+    }
+    render();
   }
   function enterLearn() {
     mode = 'learn';
@@ -597,7 +604,7 @@ function perft(s, d) {
     render();
   }
   function tapLearn(i) {
-    if (L.done || L.locked || !scrim.hidden) return;
+    if (L.done || L.locked || L.wait || !scrim.hidden) return;
     const hit = moves.filter(m => m.to === i);
     if (sel >= 0 && hit.length) {
       if (hit[0].promo) askPromotion(hit); else playLearn(hit[0]);
@@ -660,17 +667,21 @@ function perft(s, d) {
   function buzz() { tone(150, .28, 0, 'sawtooth'); tone(110, .3, .12, 'sawtooth'); }
   let sayTimer = 0;
   function hush() { clearTimeout(sayTimer); try { window.speechSynthesis && speechSynthesis.cancel(); } catch (e) {} }
-  function say(text) {
+  function say(text, done) {
     hush();
-    if (!opts.sound || !window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+    let fired = false, guard = 0;
+    const fin = () => { if (fired) return; fired = true; clearTimeout(guard); if (done) done(); };
+    if (!opts.sound || !window.speechSynthesis || !window.SpeechSynthesisUtterance) { fin(); return; }
+    guard = setTimeout(fin, 2500 + text.length * 260);   // in case the tablet never reports the end
     sayTimer = setTimeout(() => {
       try {
         const u = new SpeechSynthesisUtterance(text.replace(/[()]/g, ', '));
         u.lang = 'ko-KR'; u.rate = 0.9;
         const v = speechSynthesis.getVoices().find(x => x.lang && x.lang.replace('_', '-').toLowerCase().indexOf('ko') === 0);
         if (v) u.voice = v;
+        u.onend = u.onerror = fin;
         speechSynthesis.speak(u);
-      } catch (e) {}
+      } catch (e) { fin(); }
     }, 80);
   }
 
@@ -860,7 +871,7 @@ function perft(s, d) {
       : check ? `체크! ${nm(cur.turn)}, 킹을 지켜요` : `${nm(cur.turn)} 차례`;
     $('tip').textContent = tipText(check);
     if (learn) {
-      $('status').textContent = `${L.i + 1}. ${L.d.title}`;
+      $('status').textContent = `${L.i + 1}. ${L.d.title}` + (L.wait ? ' · 설명을 끝까지 들어요' : '');
       $('tip').textContent = L.done || L.locked ? L.msg : (L.msg ? L.msg + ' ' : '') + L.d.text;
       $('lstep').textContent = `배우기 ${L.i + 1} / ${LESSONS.length}`;
       const fin = opts.done || [];
@@ -870,6 +881,7 @@ function perft(s, d) {
       $('l-next').classList.toggle('primary', L.done);
     }
     app.classList.toggle('learn', learn);
+    app.classList.toggle('wait', learn && !!L.wait);
     for (const id of ['card-w', 'card-b', 'undo', 'new', 'opt-hints', 'opt-f2f']) $(id).hidden = learn;
     $('lhead').hidden = $('lnav').hidden = !learn;
     $('learn').textContent = learn ? '게임하기' : '배우기';
@@ -901,7 +913,7 @@ function perft(s, d) {
   $('l-next').onclick = () => { if (L.i < LESSONS.length - 1) startLesson(L.i + 1); else { opts.lesson = 0; save(); exitLearn(); } };
   $('new').onclick = askNew;
   for (const k of ['hints', 'f2f', 'sound']) {
-    $('opt-' + k).onclick = () => { opts[k] = !opts[k]; save(); render(); if (k === 'sound') { if (opts.sound) tone(420, .1); else hush(); } };
+    $('opt-' + k).onclick = () => { opts[k] = !opts[k]; save(); render(); if (k === 'sound') { if (opts.sound) tone(420, .1); else { hush(); if (L && L.wait) { L.wait = false; render(); } } } };
   }
   for (const c of ['w', 'b']) {
     const input = $('name-' + c);
