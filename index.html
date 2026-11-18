@@ -72,6 +72,7 @@ button{cursor:pointer;touch-action:manipulation}
 .title{display:flex;align-items:center;gap:10px}
 .title img{width:48px;height:48px;flex:none;border-radius:12px;background:#FFFFFF;box-shadow:0 0 0 2px var(--line)}
 .lhead{grid-area:black;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;background:var(--panel);border:2px solid var(--line);border-radius:16px;padding:10px 14px}
+.lhead .btn{margin-left:auto;min-height:40px;padding-block:4px}
 .lhead b{font-family:var(--display);font-weight:400;font-size:1.3rem}
 .dots{display:flex;gap:6px;flex-wrap:wrap}
 .dots i{width:16px;height:16px;border-radius:50%;border:2px solid var(--line);background:var(--btn)}
@@ -245,7 +246,7 @@ button{cursor:pointer;touch-action:manipulation}
       <span class="badge" id="badge-b" hidden></span>
       <div class="taken" id="taken-b"></div>
     </section>
-    <section class="lhead" id="lhead" hidden><b id="lstep"></b><div class="dots" id="dots"></div></section>
+    <section class="lhead" id="lhead" hidden><b id="lstep"></b><div class="dots" id="dots"></div><button class="btn" id="l-say" type="button">설명 듣기</button></section>
     <div class="lnav" id="lnav" hidden>
       <button class="btn" id="l-prev" type="button">이전</button>
       <button class="btn" id="l-again" type="button">다시 하기</button>
@@ -535,7 +536,7 @@ function perft(s, d) {
   ];
   let mode = 'play', L = null, timer = 0;
 
-  function startLesson(i) {
+  function startLesson(i, quiet) {
     clearTimeout(timer);
     const d = LESSONS[i];
     opts.lesson = i;
@@ -543,13 +544,14 @@ function perft(s, d) {
     cur = parseFEN(d.fen);
     sel = -1; moves = []; over = null; justMoved = false;
     closeSheet(); save(); render();
+    if (!quiet) say(d.title + '. ' + d.text);
   }
   function enterLearn() {
     mode = 'learn';
     startLesson(Math.min(opts.lesson || 0, LESSONS.length - 1));
   }
   function exitLearn() {
-    clearTimeout(timer);
+    clearTimeout(timer); hush();
     mode = 'play'; L = null; sheetSeen = false; justMoved = false;
     setPosition(); closeSheet(); render();
   }
@@ -558,11 +560,12 @@ function perft(s, d) {
     opts.done = Array.from(new Set((opts.done || []).concat(L.i)));
     save();
     tone(523, .12); tone(659, .12, .12); tone(784, .25, .24);
+    say(msg);
   }
   function fail(msg) {
     L.msg = msg; L.locked = true;
-    tone(220, .2);
-    timer = setTimeout(() => { const i = L.i; startLesson(i); L.msg = msg + ' 다시 해 봐요.'; render(); }, 1700);
+    buzz(); say(msg + ' 다시 해 봐요.');
+    timer = setTimeout(() => { const i = L.i; startLesson(i, true); L.msg = msg + ' 다시 해 봐요.'; render(); }, 2600);
   }
   function playLearn(m) {
     const d = L.d, moved = cur.b[m.from][1], n = make(cur, m);
@@ -577,6 +580,7 @@ function perft(s, d) {
         if (n.cap) L.msg = '잡았어요!';
         else if (got) L.msg = '별을 모았어요!';
         tone(got || n.cap ? 620 : 420, .1);
+        if (L.msg) say(L.msg);
       }
     } else {
       cur = n;
@@ -600,8 +604,14 @@ function perft(s, d) {
       return;
     }
     const p = cur.b[i];
-    if (p && p[0] === 'w' && i !== sel) { sel = i; moves = L.d.free ? pseudo(cur, i) : legalFrom(cur, i); }
-    else { sel = -1; moves = []; }
+    if (p && p[0] === 'w' && i !== sel) {
+      sel = i; moves = L.d.free ? pseudo(cur, i) : legalFrom(cur, i); L.msg = '';
+      if (!moves.length) { L.msg = '이 말은 지금 갈 수 있는 곳이 없어요. 다른 말을 눌러 봐요.'; buzz(); say(L.msg); }
+    } else if (i === sel) { sel = -1; moves = []; }
+    else {
+      L.msg = sel >= 0 ? '거기는 갈 수 없어요. 초록 칸이나 빨간 칸을 눌러요.' : p ? '검은 말은 움직일 수 없어요. 흰 말을 눌러요.' : '먼저 흰 말을 눌러요.';
+      buzz(); say(L.msg);
+    }
     justMoved = false;
     render();
   }
@@ -633,18 +643,35 @@ function perft(s, d) {
 
   /* ---------- sound ---------- */
   let ac = null;
-  function tone(freq, dur, delay) {
+  function tone(freq, dur, delay, type) {
     if (!opts.sound) return;
     try {
       ac = ac || new (window.AudioContext || window.webkitAudioContext)();
       if (ac.state === 'suspended') ac.resume();
       const t = ac.currentTime + (delay || 0), o = ac.createOscillator(), g = ac.createGain();
-      o.type = 'triangle'; o.frequency.value = freq;
+      o.type = type || 'triangle'; o.frequency.value = freq;
       g.gain.setValueAtTime(0.14, t);
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       o.connect(g); g.connect(ac.destination);
       o.start(t); o.stop(t + dur);
     } catch (e) {}
+  }
+
+  function buzz() { tone(150, .28, 0, 'sawtooth'); tone(110, .3, .12, 'sawtooth'); }
+  let sayTimer = 0;
+  function hush() { clearTimeout(sayTimer); try { window.speechSynthesis && speechSynthesis.cancel(); } catch (e) {} }
+  function say(text) {
+    hush();
+    if (!opts.sound || !window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+    sayTimer = setTimeout(() => {
+      try {
+        const u = new SpeechSynthesisUtterance(text.replace(/[()]/g, ', '));
+        u.lang = 'ko-KR'; u.rate = 0.9;
+        const v = speechSynthesis.getVoices().find(x => x.lang && x.lang.replace('_', '-').toLowerCase().indexOf('ko') === 0);
+        if (v) u.voice = v;
+        speechSynthesis.speak(u);
+      } catch (e) {}
+    }, 80);
   }
 
   /* ---------- game flow ---------- */
@@ -843,7 +870,7 @@ function perft(s, d) {
       $('l-next').classList.toggle('primary', L.done);
     }
     app.classList.toggle('learn', learn);
-    for (const id of ['card-w', 'card-b', 'undo', 'new', 'opt-hints', 'opt-f2f', 'opt-sound']) $(id).hidden = learn;
+    for (const id of ['card-w', 'card-b', 'undo', 'new', 'opt-hints', 'opt-f2f']) $(id).hidden = learn;
     $('lhead').hidden = $('lnav').hidden = !learn;
     $('learn').textContent = learn ? '게임하기' : '배우기';
     $('undo').disabled = hist.length < 2;
@@ -870,10 +897,11 @@ function perft(s, d) {
   $('learn').onclick = () => { if (mode === 'learn') exitLearn(); else enterLearn(); };
   $('l-prev').onclick = () => { if (L.i > 0) startLesson(L.i - 1); };
   $('l-again').onclick = () => startLesson(L.i);
+  $('l-say').onclick = () => say(L.done || L.locked ? L.msg : L.d.title + '. ' + L.d.text);
   $('l-next').onclick = () => { if (L.i < LESSONS.length - 1) startLesson(L.i + 1); else { opts.lesson = 0; save(); exitLearn(); } };
   $('new').onclick = askNew;
   for (const k of ['hints', 'f2f', 'sound']) {
-    $('opt-' + k).onclick = () => { opts[k] = !opts[k]; save(); render(); if (k === 'sound') tone(420, .1); };
+    $('opt-' + k).onclick = () => { opts[k] = !opts[k]; save(); render(); if (k === 'sound') { if (opts.sound) tone(420, .1); else hush(); } };
   }
   for (const c of ['w', 'b']) {
     const input = $('name-' + c);
