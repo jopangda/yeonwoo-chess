@@ -485,7 +485,7 @@ function perft(s, d) {
   }
 
   let hist, cur, sel = -1, moves = [], over = null, sheetSeen = false, justMoved = false;
-  let names = { w: '연우', b: '짝꿍' };
+  let names = { w: '연우', b: '아빠' };
   let opts = { hints: true, f2f: false, sound: true };
 
   const pieceSVG = (p, cls) =>
@@ -731,6 +731,7 @@ function perft(s, d) {
   function start(data) {
     const d = data && data.hist ? data : load();
     if (d.names) names = Object.assign(names, d.names);
+    if (names.b === '짝꿍') names.b = '아빠';
     if (d.opts) opts = Object.assign(opts, d.opts);
     $('name-w').value = names.w; $('name-b').value = names.b;
     hist = Array.isArray(d.hist) && d.hist.length ? d.hist : [{ fen: START, mv: null, cap: null }];
