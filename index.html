@@ -64,6 +64,9 @@ button{cursor:pointer;touch-action:manipulation}
 }
 .side{display:contents}
 .title{grid-area:title;margin:0;align-self:center;font-family:var(--display);font-weight:400;font-size:1.6rem;line-height:1.1}
+.title{display:flex;align-items:center;gap:10px}
+.title img{width:48px;height:48px;flex:none;border-radius:12px;background:#FFFFFF;box-shadow:0 0 0 2px var(--line)}
+.duo{width:150px;height:150px;border-radius:20px;justify-self:center;background:#FFFFFF}
 .actions{grid-area:actions;display:flex;gap:8px}
 .card.b{grid-area:black}
 .card.w{grid-area:white}
@@ -81,7 +84,8 @@ button{cursor:pointer;touch-action:manipulation}
   padding:8px 12px;min-width:0;transition:border-color .15s;
 }
 .card.turn{border-color:var(--turn)}
-.card .chip{width:34px;height:34px;flex:none;border-radius:50%;background:var(--sq-d);padding:3px}
+.card .face{width:44px;height:44px;flex:none;border-radius:50%;object-fit:cover;background:#FFFFFF;box-shadow:0 0 0 2px var(--line)}
+.card .chip{width:26px;height:26px;flex:none;border-radius:50%;background:var(--sq-d);padding:2px;margin-left:-20px;align-self:flex-end;position:relative}
 .card .name{
   flex:1 1 5em;min-width:0;width:5em;border:0;background:transparent;padding:4px 2px;border-radius:8px;
   font-family:var(--display);font-size:1.3rem;
@@ -214,14 +218,16 @@ button{cursor:pointer;touch-action:manipulation}
 
 <main class="app" id="app">
   <div class="side left">
-    <h1 class="title">연우 체스</h1>
+    <h1 class="title"><img src="img/duo.webp" alt="" width="48" height="48">연우 체스</h1>
     <section class="card b" id="card-b" aria-label="검은 말">
+      <img class="face" src="img/grownup.webp" alt="" width="44" height="44">
       <svg class="pc b chip" viewBox="0 0 100 100" aria-hidden="true"><use href="#pc-k"/></svg>
       <input class="name" id="name-b" maxlength="8" autocomplete="off" enterkeyhint="done" aria-label="검은 말 이름">
       <span class="badge" id="badge-b" hidden></span>
       <div class="taken" id="taken-b"></div>
     </section>
     <section class="card w" id="card-w" aria-label="흰 말">
+      <img class="face" src="img/kid.webp" alt="" width="44" height="44">
       <svg class="pc w chip" viewBox="0 0 100 100" aria-hidden="true"><use href="#pc-k"/></svg>
       <input class="name" id="name-w" maxlength="8" autocomplete="off" enterkeyhint="done" aria-label="흰 말 이름">
       <span class="badge" id="badge-w" hidden></span>
@@ -594,7 +600,7 @@ function perft(s, d) {
     sheetSeen = true;
     const head = over.kind === 'mate' ? `체크메이트! ${esc(nm(over.winner))} 승리` : '비겼어요';
     const body = over.kind === 'mate' ? `${esc(nm(other(over.winner)))}의 킹이 더는 피할 곳이 없어요.` : esc(over.why);
-    openSheet(`<h2>${head}</h2><p>${body}</p><div class="row">
+    openSheet(`<img class="duo" src="img/duo.webp" alt="" width="150" height="150"><h2>${head}</h2><p>${body}</p><div class="row">
       <button class="btn primary" type="button" data-act="new">한 판 더</button>
       <button class="btn" type="button" data-act="close">판 보기</button></div>`);
     sheet.onclick = e => {
