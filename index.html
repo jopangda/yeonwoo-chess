@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>연우 체스</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap">
+</head>
+<body>
+<!--APP-->
+<style>
+/* Layout: one play table that fills the screen. The board sits in the middle,
+   each player's card sits on their own side of it, tools stay at the edge. */
+:root{
+  --bg:#E4EDF5; --panel:#FFFFFF; --fg:#1B2A3A; --muted:#566B80; --line:#C5D3E0;
+  --btn:#EEF3F8; --btn-on:#1B2A3A; --btn-on-fg:#FFFFFF;
+  --sq-l:#F7EFD5; --sq-d:#62A7D4; --frame:#2E5F86;
+  --sel:#FFC93C; --last:rgba(255,201,60,.6); --check:#EF5B45; --hint:rgba(20,34,48,.3);
+  --turn:#FFC93C; --turn-fg:#3A2A00;
+  --pw-f:#FFFDF5; --pw-s:#243241; --pw-d:#243241;
+  --pb-f:#2A3848; --pb-s:#0A1016; --pb-d:#A9BDD0;
+  --scrim:rgba(20,34,48,.45);
+  --display:'Jua','Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;
+  --body:'Gowun Dodum','Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F1924; --panel:#1A2837; --fg:#EAF1F7; --muted:#9FB3C6; --line:#2F4155;
+    --btn:#243446; --btn-on:#EAF1F7; --btn-on-fg:#14202C;
+    --sq-l:#E9E1C6; --sq-d:#4F93BF; --frame:#0A121B;
+    --hint:rgba(10,18,27,.38); --scrim:rgba(5,10,16,.6);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F1924; --panel:#1A2837; --fg:#EAF1F7; --muted:#9FB3C6; --line:#2F4155;
+  --btn:#243446; --btn-on:#EAF1F7; --btn-on-fg:#14202C;
+  --sq-l:#E9E1C6; --sq-d:#4F93BF; --frame:#0A121B;
+  --hint:rgba(10,18,27,.38); --scrim:rgba(5,10,16,.6);
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font-family:var(--body); font-size:16px; line-height:1.4;
+  padding-block:12px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+  -webkit-tap-highlight-color:transparent; overscroll-behavior:none;
+}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;touch-action:manipulation}
+:focus-visible{outline:3px solid var(--sel);outline-offset:2px}
+
+.app{
+  height:100%; display:grid; gap:10px;
+  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-rows:auto auto minmax(240px,1fr) auto auto auto;
+  grid-template-areas:"title actions" "black black" "board board" "white white" "status status" "toggles toggles";
+}
+.side{display:contents}
+.title{grid-area:title;margin:0;align-self:center;font-family:var(--display);font-weight:400;font-size:1.6rem;line-height:1.1}
+.actions{grid-area:actions;display:flex;gap:8px}
+.card.b{grid-area:black}
+.card.w{grid-area:white}
+.boardwrap{grid-area:board;position:relative;display:grid;place-items:center;min-width:0;min-height:0}
+.status{grid-area:status;margin:0;text-align:center;font-family:var(--display);font-size:1.15rem;min-height:1.6em}
+.toggles{grid-area:toggles;display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+
+@media (min-aspect-ratio: 11/10) and (min-width: 720px){
+  .app{
+    grid-template-columns:minmax(160px,240px) minmax(0,1fr) minmax(160px,240px);
+    grid-template-rows:minmax(0,1fr);
+    grid-template-areas:"left board right"; gap:16px;
+  }
+  .side{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .side.left{grid-area:left}
+  .side.right{grid-area:right;justify-content:center}
+  .side.left .card.w{margin-top:auto}
+  .title{font-size:1.9rem;order:-1}
+  .side.left .card.b{order:0}
+  .actions,.toggles{flex-direction:column}
+  .status{text-align:left;font-size:1.3rem;min-height:3.2em}
+}
+
+/* Player cards */
+.card{
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;
+  background:var(--panel);border:2px solid var(--line);border-radius:16px;
+  padding:8px 12px;min-width:0;transition:border-color .15s;
+}
+.card.turn{border-color:var(--turn)}
+.card .chip{width:34px;height:34px;flex:none;border-radius:50%;background:var(--sq-d);padding:3px}
+.card .name{
+  flex:1 1 5em;min-width:0;width:5em;border:0;background:transparent;padding:4px 2px;border-radius:8px;
+  font-family:var(--display);font-size:1.3rem;
+}
+.card .name:focus{background:var(--btn)}
+.badge{
+  flex:none;font-family:var(--display);font-size:.95rem;padding:2px 10px;border-radius:999px;
+  background:var(--turn);color:var(--turn-fg);
+}
+.badge.check{background:var(--check);color:#FFFFFF}
+.taken{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:1px;min-height:26px;color:var(--muted);font-size:.9rem}
+.taken .pc{width:24px;height:24px;flex:none}
+.taken .plus{margin-left:6px;font-family:var(--display);color:var(--fg)}
+
+/* Buttons */
+.btn{
+  min-height:46px;padding:8px 16px;border-radius:14px;border:2px solid var(--line);
+  background:var(--btn);font-family:var(--display);font-size:1.05rem;white-space:nowrap;
+}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:var(--sel);border-color:var(--sel);color:var(--turn-fg)}
+.btn[aria-pressed]{display:flex;align-items:center;gap:8px}
+.btn[aria-pressed]::before{content:"";width:12px;height:12px;border-radius:50%;border:2px solid currentColor;flex:none}
+.btn[aria-pressed="true"]{background:var(--btn-on);color:var(--btn-on-fg);border-color:var(--btn-on)}
+.btn[aria-pressed="true"]::before{background:var(--sel);border-color:var(--sel)}
+
+/* Board */
+.board{
+  --cell:40px;
+  display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);
+  border-radius:10px;overflow:hidden;box-shadow:0 0 0 4px var(--frame),0 10px 24px rgba(20,34,48,.25);
+  user-select:none;-webkit-user-select:none;
+}
+.sq{
+  position:relative;border:0;padding:0;margin:0;min-width:0;min-height:0;border-radius:0;
+  background-color:var(--sq-l);
+}
+.sq.dk{background-color:var(--sq-d)}
+.sq.last{background-image:linear-gradient(var(--last),var(--last))}
+.sq.sel{background-color:var(--sel);background-image:none}
+.sq.chk{background-image:radial-gradient(circle,var(--check) 0 38%,transparent 78%)}
+.sq:focus-visible{outline-offset:-3px;z-index:1}
+.sq .pc{position:absolute;inset:5%;width:90%;height:90%;pointer-events:none}
+.sq.hint::after{content:"";position:absolute;inset:35%;border-radius:50%;background:var(--hint);pointer-events:none}
+.sq.hint.cap::after{inset:5%;background:none;box-shadow:inset 0 0 0 calc(var(--cell)*.09) var(--hint)}
+.co{position:absolute;font-family:var(--display);font-size:max(9px,calc(var(--cell)*.2));line-height:1;color:var(--sq-d);pointer-events:none;opacity:.9}
+.sq.dk .co{color:var(--sq-l)}
+.co.r{top:4%;left:6%}
+.co.f{bottom:4%;right:6%}
+
+.pc{stroke-width:4;stroke-linejoin:round;stroke-linecap:round;overflow:visible}
+.pc.w{--f:var(--pw-f);--s:var(--pw-s);--d:var(--pw-d)}
+.pc.b{--f:var(--pb-f);--s:var(--pb-s);--d:var(--pb-d)}
+.pc{fill:var(--f);stroke:var(--s)}
+.f2f .sq .pc.b,.f2f .card.b,.f2f .sheet.forb{rotate:180deg}
+@keyframes pop{from{scale:.78}}
+.sq.moved .pc{animation:pop .2s ease-out}
+@media (prefers-reduced-motion: reduce){.sq.moved .pc{animation:none}.card{transition:none}}
+
+/* Sheets shown over the board */
+.scrim{position:absolute;inset:0;display:grid;place-items:center;background:var(--scrim);border-radius:10px;z-index:5;padding:12px}
+.sheet{
+  background:var(--panel);border-radius:20px;padding:20px;max-width:100%;text-align:center;
+  box-shadow:0 12px 32px rgba(0,0,0,.3);display:grid;gap:14px;
+}
+.sheet h2{margin:0;font-family:var(--display);font-weight:400;font-size:1.7rem;text-wrap:balance}
+.sheet p{margin:0;color:var(--muted)}
+.sheet .row{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.pick{
+  width:76px;padding:6px 4px 8px;border-radius:14px;border:2px solid var(--line);background:var(--sq-d);
+  font-family:var(--display);font-size:.95rem;color:#FFFFFF;display:grid;justify-items:center;gap:2px;
+}
+.pick .pc{width:54px;height:54px}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="pc-p" viewBox="0 0 100 100">
+    <path d="M38 78q10-16 4-32h16q-6 16 4 32z"/>
+    <rect x="33" y="41" width="34" height="8" rx="4"/>
+    <circle cx="50" cy="27" r="14"/>
+    <path d="M20 92h60v-7q0-8-9-8H29q-9 0-9 8z"/>
+  </symbol>
+  <symbol id="pc-r" viewBox="0 0 100 100">
+    <path d="M33 78l3-40h28l3 40z"/>
+    <path d="M25 12h12v8h7v-8h12v8h7v-8h12v22q0 6-6 6H31q-6 0-6-6z"/>
+    <path d="M20 92h60v-7q0-8-9-8H29q-9 0-9 8z"/>
+  </symbol>
+  <symbol id="pc-n" viewBox="0 0 100 100">
+    <path d="M30 78q0-22 16-34l-12 5q-9 3-11-5l17-25 4-14 10 9q28 10 23 64z"/>
+    <circle cx="45" cy="27" r="3" style="fill:var(--d);stroke:none"/>
+    <path d="M60 24q9 16 8 38" fill="none" style="stroke:var(--d)"/>
+    <path d="M20 92h60v-7q0-8-9-8H29q-9 0-9 8z"/>
+  </symbol>
+  <symbol id="pc-b" viewBox="0 0 100 100">
+    <path d="M36 78q12-12 6-26h16q-6 14 6 26z"/>
+    <path d="M50 13q22 20 9 37H41q-13-17 9-37z"/>
+    <path d="M55 24l-8 12" fill="none" style="stroke:var(--d)"/>
+    <rect x="33" y="48" width="34" height="8" rx="4"/>
+    <circle cx="50" cy="9" r="5"/>
+    <path d="M20 92h60v-7q0-8-9-8H29q-9 0-9 8z"/>
+  </symbol>
+  <symbol id="pc-q" viewBox="0 0 100 100">
+    <path d="M34 78q7-10 3-22h26q-4 12 3 22z"/>
+    <path d="M21 24l12 34h34l12-34-15 17-14-26-14 26z"/>
+    <circle cx="21" cy="22" r="5"/><circle cx="50" cy="13" r="5"/><circle cx="79" cy="22" r="5"/>
+    <path d="M20 92h60v-7q0-8-9-8H29q-9 0-9 8z"/>
+  </symbol>
+  <symbol id="pc-k" viewBox="0 0 100 100">
+    <path d="M46 4h8v8h8v8h-8v16h-8V20h-8v-8h8z"/>
+    <path d="M31 78l-7-28q-2-14 12-14h28q14 0 12 14l-7 28z"/>
+    <path d="M27 62h46" fill="none" style="stroke:var(--d)"/>
+    <path d="M20 92h60v-7q0-8-9-8H29q-9 0-9 8z"/>
+  </symbol>
+</svg>
+
+<main class="app" id="app">
+  <div class="side left">
+    <h1 class="title">연우 체스</h1>
+    <section class="card b" id="card-b" aria-label="검은 말">
+      <svg class="pc b chip" viewBox="0 0 100 100" aria-hidden="true"><use href="#pc-k"/></svg>
+      <input class="name" id="name-b" maxlength="8" autocomplete="off" enterkeyhint="done" aria-label="검은 말 이름">
+      <span class="badge" id="badge-b" hidden></span>
+      <div class="taken" id="taken-b"></div>
+    </section>
+    <section class="card w" id="card-w" aria-label="흰 말">
+      <svg class="pc w chip" viewBox="0 0 100 100" aria-hidden="true"><use href="#pc-k"/></svg>
+      <input class="name" id="name-w" maxlength="8" autocomplete="off" enterkeyhint="done" aria-label="흰 말 이름">
+      <span class="badge" id="badge-w" hidden></span>
+      <div class="taken" id="taken-w"></div>
+    </section>
+  </div>
+
+  <div class="boardwrap" id="wrap">
+    <div class="board" id="board" role="grid" aria-label="체스판"></div>
+    <div class="scrim" id="scrim" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+  </div>
+
+  <div class="side right">
+    <p class="status" id="status" aria-live="polite"></p>
+    <div class="actions">
+      <button class="btn" id="undo" type="button">무르기</button>
+      <button class="btn" id="new" type="button">새 게임</button>
+    </div>
+    <div class="toggles">
+      <button class="btn" id="opt-hints" type="button" aria-pressed="true">갈 수 있는 곳</button>
+      <button class="btn" id="opt-f2f" type="button" aria-pressed="false">마주 보고 앉기</button>
+      <button class="btn" id="opt-sound" type="button" aria-pressed="true">소리</button>
+    </div>
+  </div>
+</main>
+
+<script>
+/*ENGINE*/
+const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+const FILES = 'abcdefgh';
+const sqName = i => FILES[i & 7] + (8 - (i >> 3));
+const sqIdx = n => (8 - +n[1]) * 8 + FILES.indexOf(n[0]);
+const other = c => (c === 'w' ? 'b' : 'w');
+
+function parseFEN(f) {
+  const [bd, turn, cr, ep, half, full] = f.split(' ');
+  const b = [];
+  for (const ch of bd) {
+    if (ch === '/') continue;
+    if (ch >= '1' && ch <= '8') for (let i = 0; i < +ch; i++) b.push(null);
+    else b.push((ch === ch.toUpperCase() ? 'w' : 'b') + ch.toLowerCase());
+  }
+  return { b, turn, cr: cr === '-' ? '' : cr, ep: ep === '-' ? -1 : sqIdx(ep), half: +half, full: +full };
+}
+function toFEN(s) {
+  let out = '';
+  for (let r = 0; r < 8; r++) {
+    let n = 0;
+    for (let c = 0; c < 8; c++) {
+      const p = s.b[r * 8 + c];
+      if (!p) { n++; continue; }
+      if (n) { out += n; n = 0; }
+      out += p[0] === 'w' ? p[1].toUpperCase() : p[1];
+    }
+    if (n) out += n;
+    if (r < 7) out += '/';
+  }
+  return [out, s.turn, s.cr || '-', s.ep < 0 ? '-' : sqName(s.ep), s.half, s.full].join(' ');
+}
+
+const N_STEPS = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+const K_STEPS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+const ORTHO = [[-1,0],[1,0],[0,-1],[0,1]];
+const DIAG = [[-1,-1],[-1,1],[1,-1],[1,1]];
+
+function attacked(b, sq, by) {
+  const r = sq >> 3, c = sq & 7;
+  const pr = by === 'w' ? r + 1 : r - 1;
+  if (pr >= 0 && pr < 8) {
+    if (c > 0 && b[pr * 8 + c - 1] === by + 'p') return true;
+    if (c < 7 && b[pr * 8 + c + 1] === by + 'p') return true;
+  }
+  for (const [dr, dc] of N_STEPS) {
+    const r1 = r + dr, c1 = c + dc;
+    if (r1 >= 0 && r1 < 8 && c1 >= 0 && c1 < 8 && b[r1 * 8 + c1] === by + 'n') return true;
+  }
+  for (const [dr, dc] of K_STEPS) {
+    const r1 = r + dr, c1 = c + dc;
+    if (r1 >= 0 && r1 < 8 && c1 >= 0 && c1 < 8 && b[r1 * 8 + c1] === by + 'k') return true;
+  }
+  for (let k = 0; k < 8; k++) {
+    const [dr, dc] = k < 4 ? ORTHO[k] : DIAG[k - 4];
+    const line = k < 4 ? 'r' : 'b';
+    let r1 = r + dr, c1 = c + dc;
+    while (r1 >= 0 && r1 < 8 && c1 >= 0 && c1 < 8) {
+      const p = b[r1 * 8 + c1];
+      if (p) {
+        if (p[0] === by && (p[1] === 'q' || p[1] === line)) return true;
+        break;
+      }
+      r1 += dr; c1 += dc;
+    }
+  }
+  return false;
+}
+
+function pseudo(s, from) {
+  const b = s.b, p = b[from];
+  if (!p) return [];
+  const col = p[0], t = p[1], opp = other(col), r = from >> 3, c = from & 7, out = [];
+  const add = (to, x) => out.push(Object.assign({ from, to }, x));
+  if (t === 'p') {
+    const d = col === 'w' ? -1 : 1, startR = col === 'w' ? 6 : 1, promoR = col === 'w' ? 0 : 7;
+    const push = to => {
+      if ((to >> 3) === promoR) for (const pr of 'qrbn') add(to, { promo: pr });
+      else add(to);
+    };
+    const r1 = r + d;
+    if (r1 >= 0 && r1 < 8) {
+      if (!b[r1 * 8 + c]) {
+        push(r1 * 8 + c);
+        if (r === startR && !b[(r + 2 * d) * 8 + c]) add((r + 2 * d) * 8 + c, { dbl: true });
+      }
+      for (const dc of [-1, 1]) {
+        const c1 = c + dc;
+        if (c1 < 0 || c1 > 7) continue;
+        const to = r1 * 8 + c1, q = b[to];
+        if (q) { if (q[0] === opp) push(to); }
+        else if (to === s.ep) add(to, { ep: true });
+      }
+    }
+    return out;
+  }
+  if (t === 'n' || t === 'k') {
+    for (const [dr, dc] of t === 'n' ? N_STEPS : K_STEPS) {
+      const r1 = r + dr, c1 = c + dc;
+      if (r1 < 0 || r1 > 7 || c1 < 0 || c1 > 7) continue;
+      const q = b[r1 * 8 + c1];
+      if (!q || q[0] === opp) add(r1 * 8 + c1);
+    }
+    if (t === 'k') {
+      const home = col === 'w' ? 60 : 4;
+      if (from === home && !attacked(b, home, opp)) {
+        const K = col === 'w' ? 'K' : 'k', Q = col === 'w' ? 'Q' : 'q';
+        if (s.cr.includes(K) && !b[home + 1] && !b[home + 2] && b[home + 3] === col + 'r' && !attacked(b, home + 1, opp)) add(home + 2, { castle: 'k' });
+        if (s.cr.includes(Q) && !b[home - 1] && !b[home - 2] && !b[home - 3] && b[home - 4] === col + 'r' && !attacked(b, home - 1, opp)) add(home - 2, { castle: 'q' });
+      }
+    }
+    return out;
+  }
+  const dirs = t === 'r' ? ORTHO : t === 'b' ? DIAG : ORTHO.concat(DIAG);
+  for (const [dr, dc] of dirs) {
+    let r1 = r + dr, c1 = c + dc;
+    while (r1 >= 0 && r1 < 8 && c1 >= 0 && c1 < 8) {
+      const q = b[r1 * 8 + c1];
+      if (!q) add(r1 * 8 + c1);
+      else { if (q[0] === opp) add(r1 * 8 + c1); break; }
+      r1 += dr; c1 += dc;
+    }
+  }
+  return out;
+}
+
+function make(s, m) {
+  const b = s.b.slice(), p = b[m.from], col = p[0];
+  let cap = b[m.to];
+  b[m.to] = m.promo ? col + m.promo : p;
+  b[m.from] = null;
+  if (m.ep) { const cs = (m.from >> 3) * 8 + (m.to & 7); cap = b[cs]; b[cs] = null; }
+  if (m.castle === 'k') { b[m.to - 1] = b[m.to + 1]; b[m.to + 1] = null; }
+  if (m.castle === 'q') { b[m.to + 1] = b[m.to - 2]; b[m.to - 2] = null; }
+  let cr = s.cr;
+  const strip = x => { cr = cr.replace(x, ''); };
+  if (p[1] === 'k') { strip(col === 'w' ? 'K' : 'k'); strip(col === 'w' ? 'Q' : 'q'); }
+  for (const sq of [m.from, m.to]) {
+    if (sq === 63) strip('K');
+    if (sq === 56) strip('Q');
+    if (sq === 7) strip('k');
+    if (sq === 0) strip('q');
+  }
+  return {
+    b, turn: other(col), cr, ep: m.dbl ? (m.from + m.to) / 2 : -1,
+    half: p[1] === 'p' || cap ? 0 : s.half + 1, full: s.full + (col === 'b' ? 1 : 0), cap: cap || null,
+  };
+}
+
+function legalFrom(s, from) {
+  const p = s.b[from];
+  if (!p || p[0] !== s.turn) return [];
+  return pseudo(s, from).filter(m => {
+    const n = make(s, m);
+    return !attacked(n.b, n.b.indexOf(s.turn + 'k'), n.turn);
+  });
+}
+function allLegal(s) {
+  let out = [];
+  for (let i = 0; i < 64; i++) if (s.b[i] && s.b[i][0] === s.turn) out = out.concat(legalFrom(s, i));
+  return out;
+}
+const inCheck = s => attacked(s.b, s.b.indexOf(s.turn + 'k'), other(s.turn));
+
+function insufficient(b) {
+  const rest = [];
+  for (let i = 0; i < 64; i++) if (b[i] && b[i][1] !== 'k') rest.push([b[i][1], ((i >> 3) + (i & 7)) & 1]);
+  if (!rest.length) return true;
+  if (rest.length === 1) return rest[0][0] === 'n' || rest[0][0] === 'b';
+  return rest.every(x => x[0] === 'b' && x[1] === rest[0][1]);
+}
+function perft(s, d) {
+  if (!d) return 1;
+  let n = 0;
+  for (const m of allLegal(s)) n += perft(make(s, m), d - 1);
+  return n;
+}
+/*END ENGINE*/
+
+(function () {
+  const $ = id => document.getElementById(id);
+  const app = $('app'), boardEl = $('board'), wrap = $('wrap'), scrim = $('scrim'), sheet = $('sheet');
+  const KEY = 'yeonwoo-chess-v1';
+  const VALUE = { q: 9, r: 5, b: 3, n: 3, p: 1 };
+  const KO = { p: '폰', n: '나이트', b: '비숍', r: '룩', q: '퀸', k: '킹' };
+
+  let hist, cur, sel = -1, moves = [], over = null, sheetSeen = false, justMoved = false;
+  let names = { w: '연우', b: '짝꿍' };
+  let opts = { hints: true, f2f: false, sound: true };
+
+  const pieceSVG = (p, cls) =>
+    `<svg class="pc ${p[0]}${cls ? ' ' + cls : ''}" viewBox="0 0 100 100" aria-hidden="true"><use href="#pc-${p[1]}"/></svg>`;
+  const esc = t => t.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  const nm = c => names[c].trim() || (c === 'w' ? '하양' : '검정');
+
+  /* ---------- storage ---------- */
+  function snapshot() { return { v: 1, hist, names, opts }; }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(snapshot())); } catch (e) {} }
+  function load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } }
+
+  /* ---------- sound ---------- */
+  let ac = null;
+  function tone(freq, dur, delay) {
+    if (!opts.sound) return;
+    try {
+      ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+      if (ac.state === 'suspended') ac.resume();
+      const t = ac.currentTime + (delay || 0), o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'triangle'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.14, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(ac.destination);
+      o.start(t); o.stop(t + dur);
+    } catch (e) {}
+  }
+
+  /* ---------- game flow ---------- */
+  function judge() {
+    over = null;
+    if (!allLegal(cur).length) {
+      over = inCheck(cur) ? { kind: 'mate', winner: other(cur.turn) } : { kind: 'draw', why: '움직일 수 있는 말이 없어요 (스테일메이트)' };
+    } else if (insufficient(cur.b)) {
+      over = { kind: 'draw', why: '남은 말로는 체크메이트를 할 수 없어요' };
+    } else if (cur.half >= 100) {
+      over = { kind: 'draw', why: '50수 동안 말을 잡지도, 폰을 움직이지도 않았어요' };
+    } else {
+      const key = f => f.split(' ').slice(0, 4).join(' ');
+      const k = key(hist[hist.length - 1].fen);
+      if (hist.filter(h => key(h.fen) === k).length >= 3) over = { kind: 'draw', why: '같은 모양이 세 번 나왔어요' };
+    }
+  }
+  function setPosition() {
+    cur = parseFEN(hist[hist.length - 1].fen);
+    sel = -1; moves = [];
+    judge();
+  }
+  function newGame() {
+    hist = [{ fen: START, mv: null, cap: null }];
+    sheetSeen = false; justMoved = false;
+    setPosition(); closeSheet(); save(); render();
+  }
+  function play(m) {
+    const n = make(cur, m);
+    hist.push({ fen: toFEN(n), mv: { from: m.from, to: m.to }, cap: n.cap });
+    sheetSeen = false; justMoved = true;
+    setPosition();
+    if (over && over.kind === 'mate') { tone(523, .15); tone(659, .15, .15); tone(784, .3, .3); }
+    else if (inCheck(cur)) { tone(660, .12); tone(880, .18, .12); }
+    else tone(n.cap ? 300 : 420, .1);
+    save(); render();
+  }
+  function undo() {
+    if (hist.length < 2) return;
+    hist.pop();
+    sheetSeen = false; justMoved = false;
+    setPosition(); closeSheet(); save(); render();
+  }
+
+  function tap(i) {
+    if (over || !scrim.hidden) return;
+    const hit = moves.filter(m => m.to === i);
+    if (sel >= 0 && hit.length) {
+      if (hit[0].promo) askPromotion(hit);
+      else play(hit[0]);
+      return;
+    }
+    const p = cur.b[i];
+    if (p && p[0] === cur.turn && i !== sel) { sel = i; moves = legalFrom(cur, i); }
+    else { sel = -1; moves = []; }
+    justMoved = false;
+    render();
+  }
+
+  /* ---------- sheets ---------- */
+  function openSheet(html, forBlack) {
+    sheet.innerHTML = html;
+    sheet.classList.toggle('forb', !!forBlack);
+    scrim.hidden = false;
+    const first = sheet.querySelector('button');
+    if (first) first.focus({ preventScroll: true });
+  }
+  function closeSheet() { scrim.hidden = true; sheet.innerHTML = ''; }
+
+  function askPromotion(cands) {
+    const col = cur.turn;
+    openSheet(
+      `<h2>어떤 말로 바꿀까요?</h2><div class="row">` +
+      'qrbn'.split('').map(t => `<button class="pick" type="button" data-promo="${t}">${pieceSVG(col + t)}${KO[t]}</button>`).join('') +
+      `</div><div class="row"><button class="btn" type="button" data-act="close">취소</button></div>`,
+      col === 'b');
+    sheet.onclick = e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      closeSheet();
+      if (b.dataset.promo) play(cands.find(m => m.promo === b.dataset.promo));
+    };
+  }
+  function showOver() {
+    sheetSeen = true;
+    const head = over.kind === 'mate' ? `체크메이트! ${esc(nm(over.winner))} 승리` : '비겼어요';
+    const body = over.kind === 'mate' ? `${esc(nm(other(over.winner)))}의 킹이 더는 피할 곳이 없어요.` : esc(over.why);
+    openSheet(`<h2>${head}</h2><p>${body}</p><div class="row">
+      <button class="btn primary" type="button" data-act="new">한 판 더</button>
+      <button class="btn" type="button" data-act="close">판 보기</button></div>`);
+    sheet.onclick = e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.act === 'new') newGame(); else closeSheet();
+    };
+  }
+  function askNew() {
+    if (hist.length < 2 || over) { newGame(); return; }
+    openSheet(`<h2>새 게임을 시작할까요?</h2><p>지금 두던 판은 사라져요.</p><div class="row">
+      <button class="btn" type="button" data-act="close">계속 두기</button>
+      <button class="btn primary" type="button" data-act="new">새로 시작</button></div>`);
+    sheet.onclick = e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.act === 'new') newGame(); else closeSheet();
+    };
+  }
+
+  /* ---------- rendering ---------- */
+  const cells = [];
+  for (let i = 0; i < 64; i++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sq' + ((((i >> 3) + (i & 7)) & 1) ? ' dk' : '');
+    b.dataset.i = i;
+    boardEl.appendChild(b);
+    cells.push(b);
+  }
+  boardEl.addEventListener('click', e => {
+    const b = e.target.closest('.sq');
+    if (b) tap(+b.dataset.i);
+  });
+
+  function render() {
+    const last = hist[hist.length - 1].mv;
+    const check = inCheck(cur), kingSq = cur.b.indexOf(cur.turn + 'k');
+    const targets = new Map(moves.map(m => [m.to, m]));
+    for (let i = 0; i < 64; i++) {
+      const el = cells[i], p = cur.b[i];
+      let cls = 'sq' + ((((i >> 3) + (i & 7)) & 1) ? ' dk' : '');
+      if (last && (i === last.from || i === last.to)) cls += ' last';
+      if (last && i === last.to && justMoved) cls += ' moved';
+      if (i === sel) cls += ' sel';
+      if (check && i === kingSq) cls += ' chk';
+      if (opts.hints && targets.has(i)) cls += ' hint' + (p || targets.get(i).ep ? ' cap' : '');
+      el.className = cls;
+      let html = '';
+      if ((i & 7) === 0) html += `<span class="co r">${8 - (i >> 3)}</span>`;
+      if ((i >> 3) === 7) html += `<span class="co f">${FILES[i & 7]}</span>`;
+      if (p) html += pieceSVG(p);
+      el.innerHTML = html;
+      el.setAttribute('aria-label', sqName(i) + (p ? ` ${p[0] === 'w' ? '흰' : '검은'} ${KO[p[1]]}` : ''));
+    }
+
+    // Player cards
+    const mat = { w: 0, b: 0 };
+    for (const p of cur.b) if (p && p[1] !== 'k') mat[p[0]] += VALUE[p[1]];
+    for (const c of ['w', 'b']) {
+      const mine = !over && cur.turn === c;
+      $('card-' + c).classList.toggle('turn', mine);
+      const badge = $('badge-' + c);
+      badge.hidden = !mine && !(over && over.kind === 'mate' && over.winner === c);
+      badge.className = 'badge' + (mine && check ? ' check' : '');
+      badge.textContent = over ? '승리' : check ? '체크!' : '차례';
+      const got = hist.map(h => h.cap).filter(p => p && p[0] !== c).sort((a, b) => VALUE[b[1]] - VALUE[a[1]]);
+      const lead = mat[c] - mat[other(c)];
+      $('taken-' + c).innerHTML = got.length
+        ? got.map(p => pieceSVG(p)).join('') + (lead > 0 ? `<span class="plus">+${lead}</span>` : '')
+        : '아직 잡은 말이 없어요';
+    }
+
+    $('status').textContent = over
+      ? (over.kind === 'mate' ? `체크메이트! ${nm(over.winner)} 승리` : `비겼어요. ${over.why}`)
+      : check ? `체크! ${nm(cur.turn)}, 킹을 지켜요` : `${nm(cur.turn)} 차례`;
+    $('undo').disabled = hist.length < 2;
+    app.classList.toggle('f2f', opts.f2f);
+    $('opt-hints').setAttribute('aria-pressed', opts.hints);
+    $('opt-f2f').setAttribute('aria-pressed', opts.f2f);
+    $('opt-sound').setAttribute('aria-pressed', opts.sound);
+    if (over && !sheetSeen) showOver();
+  }
+
+  function fit() {
+    const s = Math.floor(Math.min(wrap.clientWidth, wrap.clientHeight) / 8) * 8;
+    if (s <= 0) return;
+    boardEl.style.width = boardEl.style.height = s + 'px';
+    boardEl.style.setProperty('--cell', s / 8 + 'px');
+    scrim.style.inset = `calc(50% - ${s / 2}px)`;
+  }
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(wrap);
+  window.addEventListener('resize', fit);
+
+  /* ---------- controls ---------- */
+  $('undo').onclick = undo;
+  $('new').onclick = askNew;
+  for (const k of ['hints', 'f2f', 'sound']) {
+    $('opt-' + k).onclick = () => { opts[k] = !opts[k]; save(); render(); if (k === 'sound') tone(420, .1); };
+  }
+  for (const c of ['w', 'b']) {
+    const input = $('name-' + c);
+    input.addEventListener('input', () => { names[c] = input.value; save(); render(); });
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
+  }
+
+  /* ---------- boot ---------- */
+  function start(data) {
+    const d = data && data.hist ? data : load();
+    if (d.names) names = Object.assign(names, d.names);
+    if (d.opts) opts = Object.assign(opts, d.opts);
+    $('name-w').value = names.w; $('name-b').value = names.b;
+    hist = Array.isArray(d.hist) && d.hist.length ? d.hist : [{ fen: START, mv: null, cap: null }];
+    try { setPosition(); } catch (e) { hist = [{ fen: START, mv: null, cap: null }]; setPosition(); }
+    fit(); render();
+  }
+  const hot = window.claude && window.claude.hot;
+  try { if (hot && hot.snapshot) hot.snapshot(snapshot); } catch (e) {}
+  if (hot && hot.ready) hot.ready(start); else start((hot && hot.data) || {});
+})();
+</script>
+<!--/APP-->
+</body>
+</html>
