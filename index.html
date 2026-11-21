@@ -104,7 +104,7 @@ button{cursor:pointer;touch-action:manipulation}
 .coach{grid-area:status;background:var(--panel);border:2px solid var(--line);border-radius:16px;padding:8px 14px;min-width:0}
 .status{margin:0;font-family:var(--display);font-size:1.2rem}
 .tip{margin:2px 0 0;color:var(--muted);min-height:2.8em;text-wrap:pretty}
-@media (max-width:520px){.tip{min-height:4.2em}.taken{flex:1 1 40%;justify-content:flex-end;font-size:.8rem}.btn{padding-inline:11px}}
+@media (max-width:520px){.tip{min-height:2.8em}.card.turn{border-width:3px;padding:4px 8px}.turnpop b{font-size:1.5rem}.turnpop img{width:52px;height:52px}.taken{flex:1 1 40%;justify-content:flex-end;font-size:.8rem}.btn{padding-inline:11px}}
 .toggles{grid-area:toggles;display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
 
 /* Player cards */
@@ -113,7 +113,23 @@ button{cursor:pointer;touch-action:manipulation}
   background:var(--panel);border:2px solid var(--line);border-radius:16px;
   padding:8px 12px;min-width:0;transition:border-color .15s;
 }
-.card.turn{border-color:var(--turn)}
+.card.turn{border-color:var(--turn);border-width:4px;padding:6px 10px;box-shadow:0 0 0 5px rgba(255,201,60,.35);animation:myturn 1.6s ease-in-out infinite}
+@keyframes myturn{50%{box-shadow:0 0 0 10px rgba(255,201,60,.12)}}
+.app:not(.learn):not(.ended) .card:not(.turn){opacity:.5}
+.app:not(.learn):not(.ended) .card:not(.turn) .face{filter:grayscale(1)}
+.card.turn .badge{font-size:1.25rem;padding:4px 14px}
+/* A thick yellow bar on the board edge facing the player whose turn it is */
+.boardwrap::after{content:"";position:absolute;left:50%;translate:-50% 0;width:var(--bw,0px);height:10px;border-radius:6px;background:var(--turn);pointer-events:none;transition:top .25s,bottom .25s}
+.boardwrap.tw::after{top:calc(50% + var(--bw,0px) / 2 + 8px)}
+.boardwrap.tb::after{top:calc(50% - var(--bw,0px) / 2 - 18px)}
+.boardwrap.none::after{display:none}
+.turnpop{position:absolute;left:50%;top:50%;translate:-50% -50%;z-index:4;pointer-events:none;display:flex;align-items:center;gap:14px;
+  background:var(--panel);border:5px solid var(--turn);border-radius:999px;padding:10px 26px 10px 10px;box-shadow:0 14px 36px rgba(0,0,0,.35);animation:pop2 1.5s ease-in-out forwards}
+.turnpop img{width:72px;height:72px;border-radius:50%;background:#FFFFFF}
+.turnpop b{font-family:var(--display);font-weight:400;font-size:2.2rem;white-space:nowrap}
+.f2f .turnpop.forb{rotate:180deg}
+@keyframes pop2{0%{opacity:0;scale:.6}15%{opacity:1;scale:1.05}25%{scale:1}80%{opacity:1}100%{opacity:0}}
+@media (prefers-reduced-motion: reduce){.card.turn{animation:none}.turnpop{animation:none}}
 .card .face{width:44px;height:44px;flex:none;border-radius:50%;object-fit:cover;background:#FFFFFF;box-shadow:0 0 0 2px var(--line)}
 .card .chip{width:26px;height:26px;flex:none;border-radius:50%;background:var(--sq-d);padding:2px;margin-left:-20px;align-self:flex-end;position:relative}
 .card .name{
@@ -296,6 +312,7 @@ button{cursor:pointer;touch-action:manipulation}
 
   <div class="boardwrap" id="wrap">
     <div class="board" id="board" role="grid" aria-label="체스판"></div>
+    <div class="turnpop" id="turnpop" hidden aria-hidden="true"><img id="turnpop-img" src="img/kid.webp" alt="" width="72" height="72"><b id="turnpop-txt"></b></div>
     <div class="scrim" id="scrim" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
   </div>
 
@@ -852,6 +869,11 @@ function think(root, ms, seenFens) {
   const pieceSVG = (p, cls) =>
     `<svg class="pc ${p[0]}${cls ? ' ' + cls : ''}" viewBox="0 0 100 100" aria-hidden="true"><use href="#pc-${p[1]}"/></svg>`;
   const esc = t => t.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  // Korean particle: picks 은/는 (and similar pairs) from whether the last syllable has a final consonant.
+  const josa = (w, withFinal, without) => {
+    const ch = w.charCodeAt(w.length - 1);
+    return ch >= 0xAC00 && ch <= 0xD7A3 && (ch - 0xAC00) % 28 ? withFinal : without;
+  };
   const nm = c => names[c].trim() || (c === 'w' ? '하양' : '검정');
 
   /* ---------- storage ---------- */
@@ -945,7 +967,21 @@ function think(root, ms, seenFens) {
     else if (inCheck(cur)) { tone(660, .12); tone(880, .18, .12); }
     else tone(n.cap ? 300 : 420, .1);
     save(); render();
-    if (note && !over) say(note.text);
+    if (!over) {
+      announceTurn();
+      if (note) say(note.text + ' 이제 ' + nm(cur.turn) + ' 차례예요.');
+      else say(nm(cur.turn) + ' 차례');
+    }
+  }
+  let popTimer = 0;
+  function announceTurn() {
+    const c = cur.turn, pop = $('turnpop');
+    clearTimeout(popTimer);
+    $('turnpop-img').src = c === 'w' ? 'img/kid.webp' : 'img/grownup.webp';
+    $('turnpop-txt').textContent = `${nm(c)} 차례!`;
+    pop.classList.toggle('forb', c === 'b');
+    pop.hidden = true; void pop.offsetWidth; pop.hidden = false;   // restart the animation
+    popTimer = setTimeout(() => { pop.hidden = true; }, 1500);
   }
   function undo() {
     if (hist.length < 2) return;
@@ -970,6 +1006,11 @@ function think(root, ms, seenFens) {
     const p = cur.b[i];
     hintMv = null;
     if (p && p[0] === cur.turn && i !== sel) { sel = i; moves = legalFrom(cur, i); }
+    else if (p && p[0] !== cur.turn) {
+      sel = -1; moves = [];
+      buzz(); announceTurn();
+      say(`지금은 ${nm(cur.turn)} 차례예요. ${nm(other(cur.turn))}${josa(nm(other(cur.turn)), '은', '는')} 기다려 주세요.`);
+    }
     else { sel = -1; moves = []; }
     justMoved = false;
     render();
@@ -1207,7 +1248,7 @@ function think(root, ms, seenFens) {
       const badge = $('badge-' + c);
       badge.hidden = !mine && !(over && over.kind === 'mate' && over.winner === c);
       badge.className = 'badge' + (mine && check ? ' check' : '');
-      badge.textContent = over ? '승리' : check ? '체크!' : '차례';
+      badge.textContent = over ? '승리' : check ? '체크! 내 차례' : '내 차례!';
       const got = hist.map(h => h.cap).filter(p => p && p[0] !== c).sort((a, b) => VALUE[b[1]] - VALUE[a[1]]);
       const lead = mat[c] - mat[other(c)];
       $('taken-' + c).innerHTML = got.length
@@ -1240,6 +1281,10 @@ function think(root, ms, seenFens) {
     $('learn').textContent = learn ? '게임하기' : '배우기';
     $('undo').disabled = hist.length < 2;
     app.classList.toggle('f2f', opts.f2f && !learn);
+    app.classList.toggle('ended', !!over);
+    wrap.classList.toggle('tw', !over && !learn && cur.turn === 'w');
+    wrap.classList.toggle('tb', !over && !learn && cur.turn === 'b');
+    wrap.classList.toggle('none', !!over || learn);
     $('opt-hints').setAttribute('aria-pressed', opts.hints);
     $('opt-f2f').setAttribute('aria-pressed', opts.f2f);
     $('opt-sound').setAttribute('aria-pressed', opts.sound);
@@ -1251,6 +1296,7 @@ function think(root, ms, seenFens) {
     if (s <= 0) return;
     boardEl.style.width = boardEl.style.height = s + 'px';
     boardEl.style.setProperty('--cell', s / 8 + 'px');
+    wrap.style.setProperty('--bw', s + 'px');
     scrim.style.inset = `calc(50% - ${s / 2}px)`;
   }
   if (window.ResizeObserver) new ResizeObserver(fit).observe(wrap);
