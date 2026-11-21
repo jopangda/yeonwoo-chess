@@ -22,6 +22,7 @@
   --btn:#EEF3F8; --btn-on:#1B2A3A; --btn-on-fg:#FFFFFF;
   --sq-l:#F7EFD5; --sq-d:#62A7D4; --frame:#2E5F86;
   --sel:#FFC93C; --last:rgba(255,201,60,.6); --check:#EF5B45; --hint:rgba(20,34,48,.3);
+  --tip:#7C4DFF; --tip-bg:rgba(124,77,255,.6);
   --go:#17A455; --go-bg:rgba(60,205,120,.62); --take-bg:rgba(239,91,69,.5);
   --turn:#FFC93C; --turn-fg:#3A2A00;
   --pw-f:#FFFDF5; --pw-s:#243241; --pw-d:#243241;
@@ -83,6 +84,13 @@ button{cursor:pointer;touch-action:manipulation}
 .wait .board{opacity:.5;transition:opacity .2s}
 .wait .sq{cursor:default}
 .learn .tip{color:var(--fg);font-size:1.08rem}
+.sq.hf{box-shadow:inset 0 0 0 calc(var(--cell)*.09) var(--tip)}
+.board .sq.ht{background-image:linear-gradient(var(--tip-bg),var(--tip-bg))!important}
+.board .sq.ht::after{content:"";position:absolute;inset:24%;border-radius:50%;background:var(--tip);box-shadow:0 0 0 calc(var(--cell)*.06) #FFFFFF;pointer-events:none;animation:beat .8s ease-in-out infinite;z-index:1}
+.board .sq.ht.cap::after{inset:4%!important;background:none;box-shadow:inset 0 0 0 calc(var(--cell)*.11) var(--tip),inset 0 0 0 calc(var(--cell)*.14) #FFFFFF}
+@media (prefers-reduced-motion: reduce){.sq.ht::after{animation:none}}
+.hintbtn{min-height:40px;padding:4px 12px;font-size:1rem;display:flex;align-items:center;gap:6px;border-color:var(--tip)}
+.hintbtn b{display:grid;place-items:center;min-width:1.5em;height:1.5em;border-radius:50%;background:var(--tip);color:#FFFFFF;font-weight:400}
 .sq.star::before{content:"";position:absolute;inset:14%;pointer-events:none;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6l13 28 31 4-23 21 6 31-27-15-27 15 6-31L6 38l31-4z' fill='%23FFC93C' stroke='%23243241' stroke-width='5' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat}
 .sq.star.hint::after{display:none}
 .duo{width:150px;height:150px;border-radius:20px;justify-self:center;background:#FFFFFF}
@@ -264,6 +272,7 @@ button{cursor:pointer;touch-action:manipulation}
       <svg class="pc b chip" viewBox="0 0 100 100" aria-hidden="true"><use href="#pc-k"/></svg>
       <input class="name" id="name-b" maxlength="8" autocomplete="off" enterkeyhint="done" aria-label="검은 말 이름">
       <span class="badge" id="badge-b" hidden></span>
+      <button class="btn hintbtn" id="hint-b" type="button">힌트 <b id="hintn-b">3</b></button>
       <div class="taken" id="taken-b"></div>
     </section>
     <section class="lhead" id="lhead" hidden><b id="lstep"></b><div class="dots" id="dots"></div><button class="btn" id="l-say" type="button">설명 듣기</button></section>
@@ -277,6 +286,7 @@ button{cursor:pointer;touch-action:manipulation}
       <svg class="pc w chip" viewBox="0 0 100 100" aria-hidden="true"><use href="#pc-k"/></svg>
       <input class="name" id="name-w" maxlength="8" autocomplete="off" enterkeyhint="done" aria-label="흰 말 이름">
       <span class="badge" id="badge-w" hidden></span>
+      <button class="btn hintbtn" id="hint-w" type="button">힌트 <b id="hintn-w">3</b></button>
       <div class="taken" id="taken-w"></div>
     </section>
   </div>
@@ -484,6 +494,54 @@ function perft(s, d) {
   for (const m of allLegal(s)) n += perft(make(s, m), d - 1);
   return n;
 }
+const PV = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
+const PW = { p: 4, n: 7, b: 5, r: 1, q: 2, k: -5 };
+function evalFor(s) {
+  let sc = 0;
+  for (let i = 0; i < 64; i++) {
+    const p = s.b[i];
+    if (!p) continue;
+    const r = i >> 3, c = i & 7, t = p[1];
+    let v = PV[t] + PW[t] * ((3.5 - Math.abs(c - 3.5)) + (3.5 - Math.abs(r - 3.5)));
+    if (t === 'p') v += (2 + 3 * (3.5 - Math.abs(c - 3.5))) * (p[0] === 'w' ? 6 - r : r - 1);
+    sc += p[0] === s.turn ? v : -v;
+  }
+  return sc;
+}
+function ordered(s, ms) {
+  const key = m => { const v = s.b[m.to]; return (v ? PV[v[1]] * 10 - PV[s.b[m.from][1]] : 0) + (m.promo ? PV[m.promo] : 0) + (m.ep ? 900 : 0); };
+  return ms.map(m => [key(m), m]).sort((x, y) => y[0] - x[0]).map(x => x[1]);
+}
+function quiesce(s, a, b, d) {
+  const stand = evalFor(s);
+  if (!d || stand >= b) return stand;
+  if (stand > a) a = stand;
+  for (const m of ordered(s, allLegal(s).filter(m => s.b[m.to] || m.ep || m.promo))) {
+    const v = -quiesce(make(s, m), -b, -a, d - 1);
+    if (v >= b) return v;
+    if (v > a) a = v;
+  }
+  return a;
+}
+function search(s, d, a, b) {
+  const ms = allLegal(s);
+  if (!ms.length) return inCheck(s) ? -100000 - d : 0;
+  if (!d) return quiesce(s, a, b, 2);
+  for (const m of ordered(s, ms)) {
+    const v = -search(make(s, m), d - 1, -b, -a);
+    if (v >= b) return v;
+    if (v > a) a = v;
+  }
+  return a;
+}
+function bestMove(s, depth) {
+  let best = null, a = -Infinity;
+  for (const m of ordered(s, allLegal(s))) {
+    const v = -search(make(s, m), depth - 1, -Infinity, -a);
+    if (v > a || !best) { a = v; best = m; }
+  }
+  return best;
+}
 /*END ENGINE*/
 
 (function () {
@@ -559,6 +617,8 @@ function perft(s, d) {
       text: '킹이 체크에서 벗어날 방법이 없으면 체크메이트, 게임에서 이겨요. 룩을 한 번 움직여 체크메이트를 만들어 보세요.' },
   ];
   let mode = 'play', L = null, timer = 0;
+  let hints = { w: 3, b: 3 }, hintMv = null, hintMsg = '';
+  const OBJ = { p: '폰을', n: '나이트를', b: '비숍을', r: '룩을', q: '퀸을', k: '킹을' };
 
   function startLesson(i, quiet) {
     clearTimeout(timer);
@@ -666,7 +726,7 @@ function perft(s, d) {
   const nm = c => names[c].trim() || (c === 'w' ? '하양' : '검정');
 
   /* ---------- storage ---------- */
-  function snapshot() { return { v: 1, hist, names, opts }; }
+  function snapshot() { return { v: 1, hist, names, opts, hints }; }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(snapshot())); } catch (e) {} }
   function load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } }
 
@@ -728,11 +788,13 @@ function perft(s, d) {
     judge();
   }
   function newGame() {
+    hints = { w: 3, b: 3 }; hintMv = null;
     hist = [{ fen: START, mv: null, cap: null }];
     sheetSeen = false; justMoved = false;
     setPosition(); closeSheet(); save(); render();
   }
   function play(m) {
+    hintMv = null;
     const n = make(cur, m);
     hist.push({ fen: toFEN(n), mv: { from: m.from, to: m.to }, cap: n.cap });
     sheetSeen = false; justMoved = true;
@@ -744,6 +806,7 @@ function perft(s, d) {
   }
   function undo() {
     if (hist.length < 2) return;
+    hintMv = null;
     hist.pop();
     sheetSeen = false; justMoved = false;
     setPosition(); closeSheet(); save(); render();
@@ -760,10 +823,32 @@ function perft(s, d) {
       return;
     }
     const p = cur.b[i];
+    hintMv = null;
     if (p && p[0] === cur.turn && i !== sel) { sel = i; moves = legalFrom(cur, i); }
     else { sel = -1; moves = []; }
     justMoved = false;
     render();
+  }
+  function giveHint(c) {
+    if (mode !== 'play' || over || cur.turn !== c || !scrim.hidden) return;
+    if (hintMv) { say(hintMsg); return; }           // already showing: repeat it, no extra cost
+    if (hints[c] <= 0) return;
+    $('tip').textContent = '좋은 수를 찾고 있어요…';
+    setTimeout(() => {
+      const m = bestMove(cur, 3);
+      if (!m) return;
+      const n = make(cur, m), chk = inCheck(n);
+      const why = chk && !allLegal(n).length ? '이렇게 두면 체크메이트예요!'
+        : n.cap ? `상대 ${OBJ[n.cap[1]]} 잡을 수 있어요.`
+        : m.promo ? '폰이 더 센 말로 변신해요.'
+        : m.castle ? '캐슬링으로 킹을 안전하게 지켜요.'
+        : chk ? '상대 킹에게 체크를 걸 수 있어요.' : '말이 더 좋은 자리로 가요.';
+      hints[c]--;
+      hintMv = m; hintMsg = `힌트! 보라색 테두리의 ${OBJ[cur.b[m.from][1]]} 보라색 칸으로 옮겨 봐요. ${why}`;
+      sel = m.from; moves = legalFrom(cur, m.from); justMoved = false;
+      tone(700, .1); tone(930, .16, .1);
+      save(); render(); say(hintMsg);
+    }, 30);
   }
 
   /* ---------- sheets ---------- */
@@ -901,6 +986,8 @@ function perft(s, d) {
       if (last && (i === last.from || i === last.to)) cls += ' last';
       if (last && i === last.to && justMoved) cls += ' moved';
       if (i === sel) cls += ' sel';
+      if (hintMv && !learn && i === hintMv.from) cls += ' hf';
+      if (hintMv && !learn && i === hintMv.to) cls += ' ht';
       if (check && i === kingSq) cls += ' chk';
       if (learn && L.stars.has(i)) cls += ' star';
       if ((opts.hints || learn) && targets.has(i)) cls += ' hint' + (p || targets.get(i).ep ? ' cap' : '');
@@ -933,7 +1020,11 @@ function perft(s, d) {
     $('status').textContent = over
       ? (over.kind === 'mate' ? `체크메이트! ${nm(over.winner)} 승리` : `비겼어요. ${over.why}`)
       : check ? `체크! ${nm(cur.turn)}, 킹을 지켜요` : `${nm(cur.turn)} 차례`;
-    $('tip').textContent = tipText(check);
+    $('tip').textContent = hintMv ? hintMsg : tipText(check);
+    for (const c of ['w', 'b']) {
+      $('hintn-' + c).textContent = hints[c];
+      $('hint-' + c).disabled = !!over || cur.turn !== c || (hints[c] <= 0 && !hintMv);
+    }
     if (learn) {
       $('status').textContent = `${L.i + 1}. ${L.d.title}` + (L.wait ? ' · 설명을 끝까지 들어요' : '');
       $('tip').textContent = L.done || L.locked ? L.msg : (L.msg ? L.msg + ' ' : '') + L.d.text;
@@ -969,6 +1060,8 @@ function perft(s, d) {
 
   /* ---------- controls ---------- */
   $('undo').onclick = undo;
+  $('hint-w').onclick = () => giveHint('w');
+  $('hint-b').onclick = () => giveHint('b');
   $('rules').onclick = () => { if (scrim.hidden) showRules(); };
   $('learn').onclick = () => { if (mode === 'learn') exitLearn(); else enterLearn(); };
   $('l-prev').onclick = () => { if (L.i > 0) startLesson(L.i - 1); };
@@ -991,6 +1084,7 @@ function perft(s, d) {
     if (d.names) names = Object.assign(names, d.names);
     if (names.b === '짝꿍') names.b = '아빠';
     if (d.opts) opts = Object.assign(opts, d.opts);
+    if (d.hints && d.hints.w >= 0 && d.hints.b >= 0) hints = { w: +d.hints.w, b: +d.hints.b };
     $('name-w').value = names.w; $('name-b').value = names.b;
     hist = Array.isArray(d.hist) && d.hist.length ? d.hist : [{ fen: START, mv: null, cap: null }];
     try { setPosition(); } catch (e) { hist = [{ fen: START, mv: null, cap: null }]; setPosition(); }
