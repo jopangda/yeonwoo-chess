@@ -91,6 +91,9 @@ button{cursor:pointer;touch-action:manipulation}
 @media (prefers-reduced-motion: reduce){.sq.ht::after{animation:none}}
 .hintbtn{min-height:40px;padding:4px 12px;font-size:1rem;display:flex;align-items:center;gap:6px;border-color:var(--tip)}
 .hintbtn b{display:grid;place-items:center;min-width:1.5em;height:1.5em;border-radius:50%;background:var(--tip);color:#FFFFFF;font-weight:400}
+.sq .pc.ghost{opacity:.4}
+.sq.gone::after{content:"";position:absolute;inset:8%;pointer-events:none;z-index:1;
+  background:linear-gradient(45deg,transparent 44%,var(--check) 44% 56%,transparent 56%),linear-gradient(-45deg,transparent 44%,var(--check) 44% 56%,transparent 56%)}
 .sq.star::before{content:"";position:absolute;inset:14%;pointer-events:none;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6l13 28 31 4-23 21 6 31-27-15-27 15 6-31L6 38l31-4z' fill='%23FFC93C' stroke='%23243241' stroke-width='5' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat}
 .sq.star.hint::after{display:none}
 .duo{width:150px;height:150px;border-radius:20px;justify-self:center;background:#FFFFFF}
@@ -741,6 +744,7 @@ function think(root, ms, seenFens) {
   ];
   let mode = 'play', L = null, timer = 0;
   let hints = { w: 3, b: 3 }, hintMv = null, hintMsg = '';
+  let note = null;   // explains a special move (en passant, castling, promotion) right after it happens
   const SUBJ = { p: '폰이', n: '나이트가', b: '비숍이', r: '룩이', q: '퀸이', k: '킹이' };
   const OBJ = { p: '폰을', n: '나이트를', b: '비숍을', r: '룩을', q: '퀸을', k: '킹을' };
 
@@ -914,6 +918,7 @@ function think(root, ms, seenFens) {
   }
   function newGame() {
     cancelThink();
+    note = null;
     hints = { w: 3, b: 3 }; hintMv = null;
     hist = [{ fen: START, mv: null, cap: null }];
     sheetSeen = false; justMoved = false;
@@ -921,6 +926,16 @@ function think(root, ms, seenFens) {
   }
   function play(m) {
     cancelThink();
+    const mover = nm(cur.turn), foe = nm(other(cur.turn));
+    note = null;
+    if (m.ep) {
+      const gone = (m.from >> 3) * 8 + (m.to & 7);
+      note = { sq: gone, piece: cur.b[gone], text: `앙파상! ${foe}의 폰이 두 칸 앞으로 나오면서 ${mover}의 폰 바로 옆에 섰어요. 그러면 바로 다음 차례에 한 칸만 나온 것처럼 대각선으로 지나가며 잡을 수 있어요. 정식 체스 규칙이에요.` };
+    } else if (m.castle) {
+      note = { text: `캐슬링! ${mover}의 킹이 두 칸 옆으로 가고, 룩이 킹을 넘어와 지켜 줘요. 정식 체스 규칙이에요.` };
+    } else if (m.promo) {
+      note = { text: `승급! ${mover}의 폰이 끝줄에 닿아서 ${{ q: '퀸으로', r: '룩으로', b: '비숍으로', n: '나이트로' }[m.promo]} 변신했어요.` };
+    }
     hintMv = null;
     const n = make(cur, m);
     hist.push({ fen: toFEN(n), mv: { from: m.from, to: m.to }, cap: n.cap });
@@ -930,10 +945,12 @@ function think(root, ms, seenFens) {
     else if (inCheck(cur)) { tone(660, .12); tone(880, .18, .12); }
     else tone(n.cap ? 300 : 420, .1);
     save(); render();
+    if (note && !over) say(note.text);
   }
   function undo() {
     if (hist.length < 2) return;
     cancelThink();
+    note = null;
     hintMv = null;
     hist.pop();
     sheetSeen = false; justMoved = false;
@@ -1176,6 +1193,7 @@ function think(root, ms, seenFens) {
       if ((i & 7) === 0) html += `<span class="co r">${8 - (i >> 3)}</span>`;
       if ((i >> 3) === 7) html += `<span class="co f">${FILES[i & 7]}</span>`;
       if (p) html += pieceSVG(p);
+      else if (note && note.sq === i && !learn) { html += pieceSVG(note.piece, 'ghost'); cls += ' gone'; el.className = cls; }
       el.innerHTML = html;
       el.setAttribute('aria-label', sqName(i) + (p ? ` ${p[0] === 'w' ? '흰' : '검은'} ${KO[p[1]]}` : ''));
     }
@@ -1200,7 +1218,7 @@ function think(root, ms, seenFens) {
     $('status').textContent = over
       ? (over.kind === 'mate' ? `체크메이트! ${nm(over.winner)} 승리` : `비겼어요. ${over.why}`)
       : check ? `체크! ${nm(cur.turn)}, 킹을 지켜요` : `${nm(cur.turn)} 차례`;
-    $('tip').textContent = thinking ? '좋은 수를 열심히 찾고 있어요… (2초쯤 걸려요)' : hintMv ? hintMsg : tipText(check);
+    $('tip').textContent = thinking ? '좋은 수를 열심히 찾고 있어요… (2초쯤 걸려요)' : hintMv ? hintMsg : note && sel < 0 && !over && !learn ? note.text : tipText(check);
     for (const c of ['w', 'b']) {
       $('hintn-' + c).textContent = hints[c];
       $('hint-' + c).disabled = !!over || thinking || cur.turn !== c || (hints[c] <= 0 && !hintMv);
