@@ -494,53 +494,176 @@ function perft(s, d) {
   for (const m of allLegal(s)) n += perft(make(s, m), d - 1);
   return n;
 }
-const PV = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
-const PW = { p: 4, n: 7, b: 5, r: 1, q: 2, k: -5 };
-function evalFor(s) {
-  let sc = 0;
+// ---- Hint engine: iterative-deepening alpha-beta (PVS) with quiescence,
+// transposition table, killer/history ordering and piece-square evaluation.
+const VAL = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
+const PST = {
+  p: [0,0,0,0,0,0,0,0, 50,50,50,50,50,50,50,50, 10,10,20,30,30,20,10,10, 5,5,10,25,25,10,5,5,
+      0,0,0,20,20,0,0,0, 5,-5,-10,0,0,-10,-5,5, 5,10,10,-20,-20,10,10,5, 0,0,0,0,0,0,0,0],
+  n: [-50,-40,-30,-30,-30,-30,-40,-50, -40,-20,0,0,0,0,-20,-40, -30,0,10,15,15,10,0,-30, -30,5,15,20,20,15,5,-30,
+      -30,0,15,20,20,15,0,-30, -30,5,10,15,15,10,5,-30, -40,-20,0,5,5,0,-20,-40, -50,-40,-30,-30,-30,-30,-40,-50],
+  b: [-20,-10,-10,-10,-10,-10,-10,-20, -10,0,0,0,0,0,0,-10, -10,0,5,10,10,5,0,-10, -10,5,5,10,10,5,5,-10,
+      -10,0,10,10,10,10,0,-10, -10,10,10,10,10,10,10,-10, -10,5,0,0,0,0,5,-10, -20,-10,-10,-10,-10,-10,-10,-20],
+  r: [0,0,0,0,0,0,0,0, 5,10,10,10,10,10,10,5, -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5,
+      -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5, 0,0,0,5,5,0,0,0],
+  q: [-20,-10,-10,-5,-5,-10,-10,-20, -10,0,0,0,0,0,0,-10, -10,0,5,5,5,5,0,-10, -5,0,5,5,5,5,0,-5,
+      0,0,5,5,5,5,0,-5, -10,5,5,5,5,5,0,-10, -10,0,5,0,0,0,0,-10, -20,-10,-10,-5,-5,-10,-10,-20],
+  k: [-30,-40,-40,-50,-50,-40,-40,-30, -30,-40,-40,-50,-50,-40,-40,-30, -30,-40,-40,-50,-50,-40,-40,-30, -30,-40,-40,-50,-50,-40,-40,-30,
+      -20,-30,-30,-40,-40,-30,-30,-20, -10,-20,-20,-20,-20,-20,-20,-10, 20,20,0,0,0,0,20,20, 20,30,10,0,0,10,30,20],
+  ke: [-50,-40,-30,-20,-20,-30,-40,-50, -30,-20,-10,0,0,-10,-20,-30, -30,-10,20,30,30,20,-10,-30, -30,-10,30,40,40,30,-10,-30,
+       -30,-10,30,40,40,30,-10,-30, -30,-10,20,30,30,20,-10,-30, -30,-30,0,0,0,0,-30,-30, -50,-30,-30,-30,-30,-30,-30,-50],
+};
+const PHASE = { n: 1, b: 1, r: 2, q: 4 };
+
+function evaluate(s) {
+  const mg = { w: 0, b: 0 }, kmg = { w: 0, b: 0 }, keg = { w: 0, b: 0 }, mat = { w: 0, b: 0 }, bish = { w: 0, b: 0 };
+  const ksq = { w: -1, b: -1 };
+  let phase = 0;
   for (let i = 0; i < 64; i++) {
     const p = s.b[i];
     if (!p) continue;
-    const r = i >> 3, c = i & 7, t = p[1];
-    let v = PV[t] + PW[t] * ((3.5 - Math.abs(c - 3.5)) + (3.5 - Math.abs(r - 3.5)));
-    if (t === 'p') v += (2 + 3 * (3.5 - Math.abs(c - 3.5))) * (p[0] === 'w' ? 6 - r : r - 1);
-    sc += p[0] === s.turn ? v : -v;
+    const c = p[0], t = p[1], j = c === 'w' ? i : i ^ 56;
+    if (t === 'k') { kmg[c] = PST.k[j]; keg[c] = PST.ke[j]; ksq[c] = i; continue; }
+    mg[c] += VAL[t] + PST[t][j];
+    if (t !== 'p') mat[c] += VAL[t];
+    if (t === 'b') bish[c]++;
+    phase += PHASE[t] || 0;
   }
-  return sc;
-}
-function ordered(s, ms) {
-  const key = m => { const v = s.b[m.to]; return (v ? PV[v[1]] * 10 - PV[s.b[m.from][1]] : 0) + (m.promo ? PV[m.promo] : 0) + (m.ep ? 900 : 0); };
-  return ms.map(m => [key(m), m]).sort((x, y) => y[0] - x[0]).map(x => x[1]);
-}
-function quiesce(s, a, b, d) {
-  const stand = evalFor(s);
-  if (!d || stand >= b) return stand;
-  if (stand > a) a = stand;
-  for (const m of ordered(s, allLegal(s).filter(m => s.b[m.to] || m.ep || m.promo))) {
-    const v = -quiesce(make(s, m), -b, -a, d - 1);
-    if (v >= b) return v;
-    if (v > a) a = v;
+  phase = Math.min(phase, 24);
+  const sc = {};
+  for (const c of ['w', 'b']) sc[c] = mg[c] + (kmg[c] * phase + keg[c] * (24 - phase)) / 24 + (bish[c] >= 2 ? 30 : 0);
+  // In won endgames, drive the lone king to the edge and bring the own king closer.
+  if (phase <= 6 && ksq.w >= 0 && ksq.b >= 0) {
+    const lead = (mg.w - mg.b) > 0 ? 'w' : 'b', lose = lead === 'w' ? 'b' : 'w';
+    if (Math.abs(mg.w - mg.b) >= 300) {
+      const lr = ksq[lose] >> 3, lc = ksq[lose] & 7, wr = ksq[lead] >> 3, wc = ksq[lead] & 7;
+      const edge = Math.max(3 - lr, lr - 4) + Math.max(3 - lc, lc - 4);
+      const dist = Math.abs(lr - wr) + Math.abs(lc - wc);
+      sc[lead] += edge * 12 + (14 - dist) * 5;
+    }
   }
-  return a;
+  const v = sc.w - sc.b;
+  return Math.round(s.turn === 'w' ? v : -v);
 }
-function search(s, d, a, b) {
-  const ms = allLegal(s);
-  if (!ms.length) return inCheck(s) ? -100000 - d : 0;
-  if (!d) return quiesce(s, a, b, 2);
-  for (const m of ordered(s, ms)) {
-    const v = -search(make(s, m), d - 1, -b, -a);
-    if (v >= b) return v;
-    if (v > a) a = v;
-  }
-  return a;
+function posKey(s) { return s.b.join(',') + s.turn + s.cr + s.ep; }
+function genAll(s) {
+  let out = [];
+  for (let i = 0; i < 64; i++) if (s.b[i] && s.b[i][0] === s.turn) out = out.concat(pseudo(s, i));
+  return out;
 }
-function bestMove(s, depth) {
-  let best = null, a = -Infinity;
-  for (const m of ordered(s, allLegal(s))) {
-    const v = -search(make(s, m), depth - 1, -Infinity, -a);
-    if (v > a || !best) { a = v; best = m; }
+const sameMove = (a, b) => a && b && a.from === b.from && a.to === b.to && a.promo === b.promo;
+
+function think(root, ms, seenFens) {
+  const deadline = Date.now() + ms, MATE = 100000;
+  const TT = new Map(), killers = [], hist = new Int32Array(4096), path = [];
+  const seen = new Set((seenFens || []).map(f => posKey(parseFEN(f))));
+  let nodes = 0, stop = false, depthNow = 1;
+  const tick = () => { if ((++nodes & 1023) === 0 && depthNow > 1 && Date.now() > deadline) stop = true; return stop; };
+
+  function order(s, list, ttm, ply) {
+    const k = killers[ply] || [];
+    return list.map(m => {
+      let v;
+      if (sameMove(m, ttm)) v = 1e8;
+      else if (s.b[m.to] || m.ep) v = 1e7 + VAL[(s.b[m.to] || 'xp')[1]] * 10 - VAL[s.b[m.from][1]];
+      else if (m.promo) v = 9e6 + VAL[m.promo];
+      else if (sameMove(m, k[0]) || sameMove(m, k[1])) v = 8e6;
+      else v = hist[m.from * 64 + m.to];
+      return [v, m];
+    }).sort((a, b) => b[0] - a[0]).map(x => x[1]);
   }
-  return best;
+  function qs(s, a, b, ply) {
+    if (tick()) return 0;
+    const stand = evaluate(s);
+    if (stand >= b) return stand;
+    if (stand > a) a = stand;
+    const kc = s.turn + 'k';
+    const caps = order(s, genAll(s).filter(m => s.b[m.to] || m.ep || m.promo === 'q'), null, ply);
+    for (const m of caps) {
+      if (!m.promo && stand + VAL[(s.b[m.to] || 'xp')[1]] + 200 < a) continue;   // delta pruning
+      const n = make(s, m);
+      if (attacked(n.b, n.b.indexOf(kc), n.turn)) continue;
+      const v = -qs(n, -b, -a, ply + 1);
+      if (stop) return 0;
+      if (v >= b) return v;
+      if (v > a) a = v;
+    }
+    return a;
+  }
+  function nm(s, d, a, b, ply) {
+    if (tick()) return 0;
+    const kc = s.turn + 'k', inChk = attacked(s.b, s.b.indexOf(kc), other(s.turn));
+    if (inChk) d++;
+    if (d <= 0) return qs(s, a, b, ply);
+    const key = posKey(s);
+    if (ply > 0 && (s.half >= 100 || seen.has(key) || path.includes(key))) return 0;
+    const e = TT.get(key);
+    if (e && e.d >= d && Math.abs(e.v) < MATE - 1000) {
+      if (e.f === 0) return e.v;
+      if (e.f === 1 && e.v >= b) return e.v;
+      if (e.f === 2 && e.v <= a) return e.v;
+    }
+    path.push(key);
+    const a0 = a;
+    let best = -Infinity, bm = null, legal = 0;
+    for (const m of order(s, genAll(s), e && e.m, ply)) {
+      const n = make(s, m);
+      if (attacked(n.b, n.b.indexOf(kc), n.turn)) continue;
+      legal++;
+      let v;
+      if (legal === 1) v = -nm(n, d - 1, -b, -a, ply + 1);
+      else {
+        v = -nm(n, d - 1, -a - 1, -a, ply + 1);
+        if (v > a && v < b) v = -nm(n, d - 1, -b, -a, ply + 1);
+      }
+      if (stop) { path.pop(); return 0; }
+      if (v > best) { best = v; bm = m; }
+      if (v > a) a = v;
+      if (a >= b) {
+        if (!s.b[m.to] && !m.ep && !m.promo) {
+          const k = killers[ply] || (killers[ply] = []);
+          if (!sameMove(k[0], m)) { k[1] = k[0]; k[0] = m; }
+          hist[m.from * 64 + m.to] += d * d;
+        }
+        break;
+      }
+    }
+    path.pop();
+    if (!legal) return inChk ? -MATE + ply : 0;
+    TT.set(key, { d, v: best, f: best <= a0 ? 2 : best >= b ? 1 : 0, m: bm });
+    return best;
+  }
+
+  // Root: iterative deepening, keeping the result of the last finished depth.
+  const kc = root.turn + 'k';
+  let rootMoves = genAll(root).filter(m => { const n = make(root, m); return !attacked(n.b, n.b.indexOf(kc), n.turn); });
+  if (!rootMoves.length) return null;
+  rootMoves = order(root, rootMoves, null, 0);
+  let result = { move: rootMoves[0], score: 0, depth: 0 };
+  path.push(posKey(root));
+  for (depthNow = 1; depthNow <= 30; depthNow++) {
+    let a = -Infinity, bm = null;
+    for (const m of rootMoves) {
+      const n = make(root, m);
+      let v;
+      if (!bm) v = -nm(n, depthNow - 1, -Infinity, Infinity, 1);
+      else {
+        v = -nm(n, depthNow - 1, -a - 1, -a, 1);
+        if (v > a && !stop) v = -nm(n, depthNow - 1, -Infinity, -a, 1);
+      }
+      if (stop) break;
+      if (v > a) { a = v; bm = m; }
+    }
+    if (stop) {
+      if (bm && !sameMove(bm, result.move) && a > result.score) result = { move: bm, score: a, depth: depthNow };
+      break;
+    }
+    result = { move: bm, score: a, depth: depthNow };
+    rootMoves = [bm].concat(rootMoves.filter(m => m !== bm));
+    if (Math.abs(a) > MATE - 1000 || Date.now() > deadline - ms * 0.45) break;   // next depth would not finish
+  }
+  result.nodes = nodes;
+  return result;
 }
 /*END ENGINE*/
 
@@ -618,6 +741,7 @@ function bestMove(s, depth) {
   ];
   let mode = 'play', L = null, timer = 0;
   let hints = { w: 3, b: 3 }, hintMv = null, hintMsg = '';
+  const SUBJ = { p: '폰이', n: '나이트가', b: '비숍이', r: '룩이', q: '퀸이', k: '킹이' };
   const OBJ = { p: '폰을', n: '나이트를', b: '비숍을', r: '룩을', q: '퀸을', k: '킹을' };
 
   function startLesson(i, quiet) {
@@ -636,6 +760,7 @@ function bestMove(s, depth) {
     render();
   }
   function enterLearn() {
+    cancelThink();
     mode = 'learn';
     startLesson(Math.min(opts.lesson || 0, LESSONS.length - 1));
   }
@@ -788,12 +913,14 @@ function bestMove(s, depth) {
     judge();
   }
   function newGame() {
+    cancelThink();
     hints = { w: 3, b: 3 }; hintMv = null;
     hist = [{ fen: START, mv: null, cap: null }];
     sheetSeen = false; justMoved = false;
     setPosition(); closeSheet(); save(); render();
   }
   function play(m) {
+    cancelThink();
     hintMv = null;
     const n = make(cur, m);
     hist.push({ fen: toFEN(n), mv: { from: m.from, to: m.to }, cap: n.cap });
@@ -806,6 +933,7 @@ function bestMove(s, depth) {
   }
   function undo() {
     if (hist.length < 2) return;
+    cancelThink();
     hintMv = null;
     hist.pop();
     sheetSeen = false; justMoved = false;
@@ -829,26 +957,78 @@ function bestMove(s, depth) {
     justMoved = false;
     render();
   }
+  /* The hint engine runs in a background worker so the screen never freezes. */
+  let worker = null, wseq = 0, wcb = null, thinking = false;
+  const THINK_MS = 2000;
+  function engineWorker() {
+    if (worker !== null) return worker;
+    try {
+      const A = '/*' + 'ENGINE*/', B = '/*' + 'END ENGINE*/';
+      const txt = Array.from(document.scripts).map(x => x.textContent).find(t => t.indexOf(B) >= 0);
+      const src = txt.slice(txt.indexOf(A), txt.indexOf(B)) +
+        '\nonmessage = function (e) { postMessage({ id: e.data.id, r: think(parseFEN(e.data.fen), e.data.ms, e.data.seen) }); };';
+      worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+      worker.onmessage = e => { if (wcb && e.data.id === wseq) { const f = wcb; wcb = null; f(e.data.r); } };
+      worker.onerror = () => {
+        worker = false;
+        if (wcb) { const f = wcb; wcb = null; f(think(cur, 800, hist.map(h => h.fen))); }
+      };
+    } catch (e) { worker = false; }
+    return worker;
+  }
+  function cancelThink() {
+    if (!thinking) return;
+    thinking = false; wcb = null; wseq++;
+    if (worker) { worker.terminate(); worker = null; }   // drop the stale search
+  }
+  function askEngine(cb) {
+    const w = engineWorker(), id = ++wseq, fen = toFEN(cur), seen = hist.map(h => h.fen);
+    if (w) { wcb = cb; w.postMessage({ id, fen, ms: THINK_MS, seen }); }
+    else setTimeout(() => { if (id === wseq) cb(think(parseFEN(fen), 800, seen)); }, 30);
+  }
+  function explain(r) {
+    const m = r.move, piece = cur.b[m.from], n = make(cur, m), chk = inCheck(n);
+    const foe = other(piece[0]);
+    if (chk && !allLegal(n).length) return '이렇게 두면 바로 체크메이트예요!';
+    if (r.score > 90000) return `이 수부터 시작하면 ${Math.ceil((100000 - r.score) / 2)}번 만에 체크메이트할 수 있어요!`;
+    if (inCheck(cur)) return '체크에서 벗어나는 가장 좋은 수예요.';
+    if (r.score < -90000) return '조금 어려운 상황이지만, 킹을 가장 오래 지킬 수 있는 수예요.';
+    if (n.cap) {
+      const safe = !attacked(n.b, m.to, foe);
+      return safe ? `상대 ${OBJ[n.cap[1]]} 공짜로 잡을 수 있어요.` : `상대 ${OBJ[n.cap[1]]} 잡아요. 다시 잡히더라도 이득이에요.`;
+    }
+    if (m.promo) return '폰이 퀸으로 변신해요!';
+    if (m.castle) return '캐슬링으로 킹을 안전한 곳에 숨겨요.';
+    if (piece[1] !== 'p' && attacked(cur.b, m.from, foe) && !attacked(n.b, m.to, foe))
+      return `지금 ${SUBJ[piece[1]]} 공격받고 있어요. 안전한 곳으로 피해요.`;
+    if (chk) return '상대 킹에게 체크를 걸어요.';
+    // Does the move attack something valuable next turn?
+    const threats = [];
+    for (const t of pseudo(Object.assign({}, n, { turn: piece[0], ep: -1 }), m.to)) {
+      const v = n.b[t.to];
+      if (v && v[0] === foe && v[1] !== 'p' && v[1] !== 'k' && VAL[v[1]] >= VAL[n.b[m.to][1]]) threats.push(v[1]);
+    }
+    if (threats.length >= 2) return '상대 말 두 개를 한꺼번에 공격해요 (양수걸이)!';
+    if (threats.length) return `다음에 상대 ${OBJ[threats[0]]} 노릴 수 있어요.`;
+    if (cur.full <= 8 && 'nb'.includes(piece[1])) return '말을 가운데 쪽으로 꺼내서 싸울 준비를 해요.';
+    return '말이 더 좋은 자리로 가요.';
+  }
   function giveHint(c) {
-    if (mode !== 'play' || over || cur.turn !== c || !scrim.hidden) return;
+    if (mode !== 'play' || over || cur.turn !== c || !scrim.hidden || thinking) return;
     if (hintMv) { say(hintMsg); return; }           // already showing: repeat it, no extra cost
     if (hints[c] <= 0) return;
-    $('tip').textContent = '좋은 수를 찾고 있어요…';
-    setTimeout(() => {
-      const m = bestMove(cur, 3);
-      if (!m) return;
-      const n = make(cur, m), chk = inCheck(n);
-      const why = chk && !allLegal(n).length ? '이렇게 두면 체크메이트예요!'
-        : n.cap ? `상대 ${OBJ[n.cap[1]]} 잡을 수 있어요.`
-        : m.promo ? '폰이 더 센 말로 변신해요.'
-        : m.castle ? '캐슬링으로 킹을 안전하게 지켜요.'
-        : chk ? '상대 킹에게 체크를 걸 수 있어요.' : '말이 더 좋은 자리로 가요.';
+    thinking = true; render();
+    askEngine(r => {
+      thinking = false;
+      if (!r || !r.move || cur.turn !== c || over) { render(); return; }
+      const m = r.move;
       hints[c]--;
-      hintMv = m; hintMsg = `힌트! 보라색 테두리의 ${OBJ[cur.b[m.from][1]]} 보라색 칸으로 옮겨 봐요. ${why}`;
+      hintMv = m;
+      hintMsg = `힌트! 보라색 테두리의 ${OBJ[cur.b[m.from][1]]} 보라색 칸으로 옮겨 봐요. ${explain(r)}`;
       sel = m.from; moves = legalFrom(cur, m.from); justMoved = false;
       tone(700, .1); tone(930, .16, .1);
       save(); render(); say(hintMsg);
-    }, 30);
+    });
   }
 
   /* ---------- sheets ---------- */
@@ -1020,10 +1200,10 @@ function bestMove(s, depth) {
     $('status').textContent = over
       ? (over.kind === 'mate' ? `체크메이트! ${nm(over.winner)} 승리` : `비겼어요. ${over.why}`)
       : check ? `체크! ${nm(cur.turn)}, 킹을 지켜요` : `${nm(cur.turn)} 차례`;
-    $('tip').textContent = hintMv ? hintMsg : tipText(check);
+    $('tip').textContent = thinking ? '좋은 수를 열심히 찾고 있어요… (2초쯤 걸려요)' : hintMv ? hintMsg : tipText(check);
     for (const c of ['w', 'b']) {
       $('hintn-' + c).textContent = hints[c];
-      $('hint-' + c).disabled = !!over || cur.turn !== c || (hints[c] <= 0 && !hintMv);
+      $('hint-' + c).disabled = !!over || thinking || cur.turn !== c || (hints[c] <= 0 && !hintMv);
     }
     if (learn) {
       $('status').textContent = `${L.i + 1}. ${L.d.title}` + (L.wait ? ' · 설명을 끝까지 들어요' : '');
