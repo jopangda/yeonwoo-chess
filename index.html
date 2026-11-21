@@ -104,7 +104,7 @@ button{cursor:pointer;touch-action:manipulation}
 .coach{grid-area:status;background:var(--panel);border:2px solid var(--line);border-radius:16px;padding:8px 14px;min-width:0}
 .status{margin:0;font-family:var(--display);font-size:1.2rem}
 .tip{margin:2px 0 0;color:var(--muted);min-height:2.8em;text-wrap:pretty}
-@media (max-width:520px){.tip{min-height:2.8em}.card.turn{border-width:3px;padding:4px 8px}.turnpop b{font-size:1.5rem}.turnpop img{width:52px;height:52px}.taken{flex:1 1 40%;justify-content:flex-end;font-size:.8rem}.btn{padding-inline:11px}}
+@media (max-width:520px){.tip{min-height:2.8em}.card.turn{border-width:3px;padding:4px 8px}.taken{flex:1 1 40%;justify-content:flex-end;font-size:.8rem}.btn{padding-inline:11px}}
 .toggles{grid-area:toggles;display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
 
 /* Player cards */
@@ -123,13 +123,7 @@ button{cursor:pointer;touch-action:manipulation}
 .boardwrap.tw::after{top:calc(50% + var(--bw,0px) / 2 + 8px)}
 .boardwrap.tb::after{top:calc(50% - var(--bw,0px) / 2 - 18px)}
 .boardwrap.none::after{display:none}
-.turnpop{position:absolute;left:50%;top:50%;translate:-50% -50%;z-index:4;pointer-events:none;display:flex;align-items:center;gap:14px;
-  background:var(--panel);border:5px solid var(--turn);border-radius:999px;padding:10px 26px 10px 10px;box-shadow:0 14px 36px rgba(0,0,0,.35);animation:pop2 1.5s ease-in-out forwards}
-.turnpop img{width:72px;height:72px;border-radius:50%;background:#FFFFFF}
-.turnpop b{font-family:var(--display);font-weight:400;font-size:2.2rem;white-space:nowrap}
-.f2f .turnpop.forb{rotate:180deg}
-@keyframes pop2{0%{opacity:0;scale:.6}15%{opacity:1;scale:1.05}25%{scale:1}80%{opacity:1}100%{opacity:0}}
-@media (prefers-reduced-motion: reduce){.card.turn{animation:none}.turnpop{animation:none}}
+@media (prefers-reduced-motion: reduce){.card.turn{animation:none}}
 .card .face{width:44px;height:44px;flex:none;border-radius:50%;object-fit:cover;background:#FFFFFF;box-shadow:0 0 0 2px var(--line)}
 .card .chip{width:26px;height:26px;flex:none;border-radius:50%;background:var(--sq-d);padding:2px;margin-left:-20px;align-self:flex-end;position:relative}
 .card .name{
@@ -312,7 +306,6 @@ button{cursor:pointer;touch-action:manipulation}
 
   <div class="boardwrap" id="wrap">
     <div class="board" id="board" role="grid" aria-label="체스판"></div>
-    <div class="turnpop" id="turnpop" hidden aria-hidden="true"><img id="turnpop-img" src="img/kid.webp" alt="" width="72" height="72"><b id="turnpop-txt"></b></div>
     <div class="scrim" id="scrim" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
   </div>
 
@@ -968,20 +961,9 @@ function think(root, ms, seenFens) {
     else tone(n.cap ? 300 : 420, .1);
     save(); render();
     if (!over) {
-      announceTurn();
       if (note) say(note.text + ' 이제 ' + nm(cur.turn) + ' 차례예요.');
       else say(nm(cur.turn) + ' 차례');
     }
-  }
-  let popTimer = 0;
-  function announceTurn() {
-    const c = cur.turn, pop = $('turnpop');
-    clearTimeout(popTimer);
-    $('turnpop-img').src = c === 'w' ? 'img/kid.webp' : 'img/grownup.webp';
-    $('turnpop-txt').textContent = `${nm(c)} 차례!`;
-    pop.classList.toggle('forb', c === 'b');
-    pop.hidden = true; void pop.offsetWidth; pop.hidden = false;   // restart the animation
-    popTimer = setTimeout(() => { pop.hidden = true; }, 1500);
   }
   function undo() {
     if (hist.length < 2) return;
@@ -1008,7 +990,7 @@ function think(root, ms, seenFens) {
     if (p && p[0] === cur.turn && i !== sel) { sel = i; moves = legalFrom(cur, i); }
     else if (p && p[0] !== cur.turn) {
       sel = -1; moves = [];
-      buzz(); announceTurn();
+      buzz();
       say(`지금은 ${nm(cur.turn)} 차례예요. ${nm(other(cur.turn))}${josa(nm(other(cur.turn)), '은', '는')} 기다려 주세요.`);
     }
     else { sel = -1; moves = []; }
